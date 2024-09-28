@@ -180,18 +180,24 @@ contract TWAMM is BaseHook, ITWAMM {
     }
 
     /// @inheritdoc ITWAMM
-    function submitOrder(PoolKey calldata key, OrderKey memory orderKey, uint256 amountIn)
+    function submitOrder(PoolKey calldata key, bool zeroForOne, uint256 duration, uint256 amountIn)
         external
         returns (bytes32 orderId)
     {
-        PoolId poolId = key.toId();
-        State storage twamm = twammStates[poolId];
         executeTWAMMOrders(key);
+
+        PoolId poolId = key.toId();
+        uint256 intervalTime = _getIntervalTime(block.timestamp);
+        OrderKey memory orderKey = OrderKey(msg.sender, (intervalTime + duration).toUint160(), zeroForOne);
+        State storage twamm = twammStates[poolId];
+
+        if (orderKey.expiration <= block.timestamp) {
+            revert ExpirationLessThanBlocktime(orderKey.expiration);
+        }
 
         uint256 sellRate;
         unchecked {
             // checks done in TWAMM library
-            uint256 duration = orderKey.expiration - block.timestamp;
             sellRate = amountIn / duration;
             orderId = _submitOrder(twamm, orderKey, sellRate);
 
@@ -217,7 +223,6 @@ contract TWAMM is BaseHook, ITWAMM {
         returns (bytes32 orderId)
     {
         if (orderKey.owner != msg.sender) revert MustBeOwner(orderKey.owner, msg.sender);
-        if (orderKey.expiration <= block.timestamp) revert ExpirationLessThanBlocktime(orderKey.expiration);
         if (sellRate == 0) revert SellRateCannotBeZero();
         if (orderKey.expiration % expirationInterval != 0) revert ExpirationNotOnInterval(orderKey.expiration);
 
@@ -704,5 +709,9 @@ contract TWAMM is BaseHook, ITWAMM {
 
     function _hasOutstandingOrders(State storage self) internal view returns (bool) {
         return self.orderPool0For1.sellRateCurrent != 0 || self.orderPool1For0.sellRateCurrent != 0;
+    }
+
+    function _getIntervalTime(uint256 timestamp) internal view returns (uint256) {
+        return timestamp - (timestamp % expirationInterval);
     }
 }

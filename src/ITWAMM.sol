@@ -101,11 +101,12 @@ interface ITWAMM {
 
     /// @notice Submits a new long term order into the TWAMM. Also executes TWAMM orders if not up to date.
     /// @param key The PoolKey for which to identify the amm pool of the order
-    /// @param orderKey The OrderKey for the new order
+    /// @param zeroForOne Trade direction
+    /// @param duration Order duration
     /// @param amountIn The amount of sell token to add to the order. Some precision on amountIn may be lost up to the
     /// magnitude of (orderKey.expiration - block.timestamp)
     /// @return orderId The bytes32 ID of the order
-    function submitOrder(PoolKey calldata key, OrderKey calldata orderKey, uint256 amountIn)
+    function submitOrder(PoolKey calldata key, bool zeroForOne, uint256 duration, uint256 amountIn)
         external
         returns (bytes32 orderId);
 

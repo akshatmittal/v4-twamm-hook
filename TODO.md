@@ -5,7 +5,7 @@
 - **Order Logic**:
 
   - [ ] Think about unlocked pool manager more, don't think it's an issue since we use `delta` properly, but doesn't hurt thinking about it more.
-  - [ ] Change `submitOrder` to take `duration` instead of `endTime`.
+  - [x] Change `submitOrder` to take `duration` instead of `endTime`.
   - [x] Update order logic has a bug with calculating owed tokens when there's multiple updates to future earnings factor.
   - [ ] Remove the ability to modify orders and only allow cancelling them. Cancelling then creating a new order is equal to modifying the order.
 
