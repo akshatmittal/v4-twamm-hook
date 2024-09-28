@@ -655,7 +655,8 @@ contract TWAMMTest is Test, Fixtures {
     }
 
     function testTWAMM_isCrossingIinitializedTick_returnsFalseWhenSwappingToSamePrice() public view {
-        TWAMM.PoolParamsOnExecute memory poolParams = TWAMM.PoolParamsOnExecute(Constants.SQRT_PRICE_1_1, 1000000 ether);
+        TWAMM.PoolParamsOnExecute memory poolParams =
+            TWAMM.PoolParamsOnExecute(Constants.SQRT_PRICE_1_1, 1000000 ether, 0);
 
         (bool crossingInitializedTick, int24 nextTickInit) =
             twammHook.isCrossingInitializedTick(poolParams, key, Constants.SQRT_PRICE_1_1);
@@ -665,7 +666,8 @@ contract TWAMMTest is Test, Fixtures {
     }
 
     function testTWAMM_isCrossingIinitializedTick_returnsTrueWhenCrossingToTheRight() public view {
-        TWAMM.PoolParamsOnExecute memory poolParams = TWAMM.PoolParamsOnExecute(Constants.SQRT_PRICE_1_1, 1000000 ether);
+        TWAMM.PoolParamsOnExecute memory poolParams =
+            TWAMM.PoolParamsOnExecute(Constants.SQRT_PRICE_1_1, 1000000 ether, 0);
 
         (bool crossingInitializedTick, int24 nextTickInit) =
             twammHook.isCrossingInitializedTick(poolParams, key, Constants.SQRT_PRICE_2_1);
@@ -675,7 +677,8 @@ contract TWAMMTest is Test, Fixtures {
     }
 
     function testTWAMM_isCrossingIinitializedTick_returnsTrueWhenCrossingToTheLeft() public view {
-        TWAMM.PoolParamsOnExecute memory poolParams = TWAMM.PoolParamsOnExecute(Constants.SQRT_PRICE_1_1, 1000000 ether);
+        TWAMM.PoolParamsOnExecute memory poolParams =
+            TWAMM.PoolParamsOnExecute(Constants.SQRT_PRICE_1_1, 1000000 ether, 0);
 
         (bool crossingInitializedTick, int24 nextTickInit) =
             twammHook.isCrossingInitializedTick(poolParams, key, Constants.SQRT_PRICE_1_2);
@@ -685,7 +688,8 @@ contract TWAMMTest is Test, Fixtures {
     }
 
     function testTWAMM_isCrossingIinitializedTick_returnsFalseWhenSwappingRightBeforeTick() public view {
-        TWAMM.PoolParamsOnExecute memory poolParams = TWAMM.PoolParamsOnExecute(Constants.SQRT_PRICE_1_1, 1000000 ether);
+        TWAMM.PoolParamsOnExecute memory poolParams =
+            TWAMM.PoolParamsOnExecute(Constants.SQRT_PRICE_1_1, 1000000 ether, 0);
 
         (bool crossingInitializedTick, int24 nextTickInit) =
             twammHook.isCrossingInitializedTick(poolParams, key, TickMath.getSqrtPriceAtTick(59));
@@ -695,7 +699,8 @@ contract TWAMMTest is Test, Fixtures {
     }
 
     function testTWAMM_isCrossingIinitializedTick_returnsFalseWhenSwappingRightToInitializeableTick() public view {
-        TWAMM.PoolParamsOnExecute memory poolParams = TWAMM.PoolParamsOnExecute(Constants.SQRT_PRICE_1_1, 1000000 ether);
+        TWAMM.PoolParamsOnExecute memory poolParams =
+            TWAMM.PoolParamsOnExecute(Constants.SQRT_PRICE_1_1, 1000000 ether, 0);
 
         (bool crossingInitializedTick, int24 nextTickInit) =
             twammHook.isCrossingInitializedTick(poolParams, key, TickMath.getSqrtPriceAtTick(50));
@@ -705,7 +710,8 @@ contract TWAMMTest is Test, Fixtures {
     }
 
     function testTWAMM_isCrossingIinitializedTick_returnsFalseWhenSwappingLeftBeforeTick() public view {
-        TWAMM.PoolParamsOnExecute memory poolParams = TWAMM.PoolParamsOnExecute(Constants.SQRT_PRICE_1_1, 1000000 ether);
+        TWAMM.PoolParamsOnExecute memory poolParams =
+            TWAMM.PoolParamsOnExecute(Constants.SQRT_PRICE_1_1, 1000000 ether, 0);
 
         (bool crossingInitializedTick, int24 nextTickInit) =
             twammHook.isCrossingInitializedTick(poolParams, key, TickMath.getSqrtPriceAtTick(-59));
@@ -715,7 +721,8 @@ contract TWAMMTest is Test, Fixtures {
     }
 
     function testTWAMM_isCrossingIinitializedTick_returnsFalseWhenSwappingLeftToInitializeableTick() public view {
-        TWAMM.PoolParamsOnExecute memory poolParams = TWAMM.PoolParamsOnExecute(Constants.SQRT_PRICE_1_1, 1000000 ether);
+        TWAMM.PoolParamsOnExecute memory poolParams =
+            TWAMM.PoolParamsOnExecute(Constants.SQRT_PRICE_1_1, 1000000 ether, 0);
 
         (bool crossingInitializedTick, int24 nextTickInit) =
             twammHook.isCrossingInitializedTick(poolParams, key, TickMath.getSqrtPriceAtTick(-50));

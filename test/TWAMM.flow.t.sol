@@ -91,7 +91,7 @@ contract TWAMMFlowTest is Test, Fixtures {
         );
     }
 
-    function test_TWAMM_E2E_SwapTrigger() public {
+    function test_TWAMM_Flow_SwapTrigger() public {
         vm.warp(10_000);
         ITWAMM.OrderKey memory oKey = _submitOrderSingleDirection(true, 1 ether, 30_000);
 
@@ -119,6 +119,7 @@ contract TWAMMFlowTest is Test, Fixtures {
 
         assertEq(balance0After - balance0Before, 0); // It's a zeroForOne trade
         assertApproxEqRel(balance1After - balance1Before, 0.5 ether, 0.01e18);
+        console2.log(balance1After - balance1Before);
 
         // Much further in the future
         vm.warp(100_000);
@@ -133,6 +134,60 @@ contract TWAMMFlowTest is Test, Fixtures {
 
         assertEq(balance0After - balance0Before, 0); // It's a zeroForOne trade
         assertApproxEqRel(balance1After - balance1Before, 0.5 ether, 0.01e18);
+        console2.log(balance1After - balance1Before);
+    }
+
+    function test_TWAMM_Flow_PartialExecution() public {
+        vm.warp(10_000);
+        ITWAMM.OrderKey memory oKey = _submitOrderSingleDirection(true, 1 ether, 30_000);
+
+        uint256 orderDuration = 20_000; // 30_000 - 10_000;
+        (uint256 sellRateCurrent,) = twammHook.getOrderPool(key, true);
+
+        assertEq(token0.balanceOf(address(twammHook)), 1 ether);
+        assertEq(sellRateCurrent, 1 ether / orderDuration);
+
+        console2.log(token0.balanceOf(address(twammHook)));
+        console2.log(token1.balanceOf(address(twammHook)));
+
+        vm.warp(20_000);
+        swap(key, false, -int256(0.0001 ether), ZERO_BYTES);
+
+        console2.log(token0.balanceOf(address(twammHook)));
+        console2.log(token1.balanceOf(address(twammHook)));
+
+        vm.warp(40_000);
+        swap(key, false, -int256(0.0001 ether), ZERO_BYTES);
+
+        console2.log(token0.balanceOf(address(twammHook)));
+        console2.log(token1.balanceOf(address(twammHook)));
+    }
+
+    function test_TWAMM_Flow_PartialCross() public {
+        vm.warp(10_000);
+        ITWAMM.OrderKey memory oKey1 = _submitOrderSingleDirection(true, 1 ether, 30_000);
+        ITWAMM.OrderKey memory oKey2 = _submitOrderSingleDirection(false, 0.5 ether, 20_000);
+
+        uint256 orderDuration = 20_000; // 30_000 - 10_000;
+        (uint256 sellRateCurrent,) = twammHook.getOrderPool(key, true);
+
+        assertEq(token0.balanceOf(address(twammHook)), 1 ether);
+        assertEq(sellRateCurrent, 1 ether / orderDuration);
+
+        console2.log(token0.balanceOf(address(twammHook)));
+        console2.log(token1.balanceOf(address(twammHook)));
+
+        vm.warp(20_000);
+        swap(key, false, -int256(0.0001 ether), ZERO_BYTES);
+
+        console2.log(token0.balanceOf(address(twammHook)));
+        console2.log(token1.balanceOf(address(twammHook)));
+
+        vm.warp(40_000);
+        swap(key, false, -int256(0.0001 ether), ZERO_BYTES);
+
+        console2.log(token0.balanceOf(address(twammHook)));
+        console2.log(token1.balanceOf(address(twammHook)));
     }
 
     function _submitOrderSingleDirection(bool zeroForOne, uint256 amount, uint256 endingtime)
