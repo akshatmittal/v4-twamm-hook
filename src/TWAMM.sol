@@ -275,21 +275,32 @@ contract TWAMM is BaseHook, ITWAMM {
     {
         Order storage order = _getOrder(self, orderKey);
         OrderPool.State storage orderPool = orderKey.zeroForOne ? self.orderPool0For1 : self.orderPool1For0;
+        bool isOrderExpired = orderKey.expiration <= block.timestamp;
 
-        if (orderKey.owner != msg.sender) revert MustBeOwner(orderKey.owner, msg.sender);
-        if (order.sellRate == 0) revert OrderDoesNotExist(orderKey);
-        if (amountDelta != 0 && orderKey.expiration <= block.timestamp) revert CannotModifyCompletedOrder(orderKey);
+        if (orderKey.owner != msg.sender) {
+            revert MustBeOwner(orderKey.owner, msg.sender);
+        }
+        if (order.sellRate == 0) {
+            revert OrderDoesNotExist(orderKey);
+        }
+        if (amountDelta != 0 && isOrderExpired) {
+            revert CannotModifyCompletedOrder(orderKey);
+        }
 
         unchecked {
-            uint256 earningsFactor = orderPool.earningsFactorCurrent - order.earningsFactorLast;
-            buyTokensOwed = (earningsFactor * order.sellRate) >> FixedPoint96.RESOLUTION;
-            earningsFactorLast = orderPool.earningsFactorCurrent;
-            order.earningsFactorLast = earningsFactorLast;
+            earningsFactorLast = isOrderExpired
+                ? orderPool.earningsFactorAtInterval[orderKey.expiration]
+                : orderPool.earningsFactorCurrent;
+            buyTokensOwed =
+                ((earningsFactorLast - order.earningsFactorLast) * order.sellRate) >> FixedPoint96.RESOLUTION;
 
-            if (orderKey.expiration <= block.timestamp) {
+            if (isOrderExpired) {
                 delete self.orders[_orderId(orderKey)];
+            } else {
+                order.earningsFactorLast = earningsFactorLast;
             }
 
+            // TODO: Remove this pls
             if (amountDelta != 0) {
                 uint256 duration = orderKey.expiration - block.timestamp;
                 uint256 unsoldAmount = order.sellRate * duration;

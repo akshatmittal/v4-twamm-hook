@@ -23,3 +23,7 @@ This implementation specifically implements the TWAMM Order Strategy using a Hoo
   - If a TWAMM order is in a state where it would move the price in the pool by enough value that it creates an arbitrage with another pool, MEV is incentivized to execute the TWAMM order and capitalize on the arbitrage opportunity. This is a _good_ thing since it means that the TWAMM order is being executed at the current market price, although while leaking _some_ value.
 - **Information Leakage**: This is not specific to this implementation but is a general consideration for all TWAMM mechanisms. Since the TWAMM orders are public, they leak _information_ that a trade of this size is coming to the market. You should always keep this in mind, although it is possible to cancel the TWAMM order if the market conditions change.
 - **Informed Order Flow**: Related to the previous point, an informed actor can create a trade in the opposite direction of existing trades to effectively trade without a fee for any overlapping amount. That said, they are still subject to the price risk of the asset involved. The hook prevents this somewhat by ensuring that the TWAMM orders are executed before new orders are accepted.
+
+## ?????
+
+[TODO](./TODO.md)

@@ -166,7 +166,7 @@ contract TWAMMFlowTest is Test, Fixtures {
     function test_TWAMM_Flow_PartialCross() public {
         vm.warp(10_000);
         ITWAMM.OrderKey memory oKey1 = _submitOrderSingleDirection(true, 1 ether, 30_000);
-        ITWAMM.OrderKey memory oKey2 = _submitOrderSingleDirection(false, 0.5 ether, 20_000);
+        ITWAMM.OrderKey memory oKey2 = _submitOrderSingleDirection(false, 0.5 ether, 30_000);
 
         uint256 orderDuration = 20_000; // 30_000 - 10_000;
         (uint256 sellRateCurrent,) = twammHook.getOrderPool(key, true);
@@ -188,6 +188,49 @@ contract TWAMMFlowTest is Test, Fixtures {
 
         console2.log(token0.balanceOf(address(twammHook)));
         console2.log(token1.balanceOf(address(twammHook)));
+    }
+
+    function testTWAMM_updatedOrder_CalculateTokensOwedAfterExpiration() public {
+        uint256 orderAmount = 1 ether;
+
+        ITWAMM.OrderKey memory orderKey1 = ITWAMM.OrderKey(address(this), 30000, true);
+        ITWAMM.OrderKey memory orderKey2 = ITWAMM.OrderKey(address(this), 30000, false);
+
+        token0.approve(address(twammHook), type(uint256).max);
+        token1.approve(address(twammHook), type(uint256).max);
+
+        vm.warp(10000);
+        twammHook.submitOrder(key, orderKey1, orderAmount);
+        twammHook.submitOrder(key, orderKey2, orderAmount);
+        ITWAMM.OrderKey memory orderKey3 = _submitOrderAs(address(0xA2), true, orderAmount * 2, 60000);
+        ITWAMM.OrderKey memory orderKey4 = _submitOrderAs(address(0xA2), false, orderAmount * 2, 60000);
+
+        vm.warp(40000);
+        twammHook.updateOrder(key, orderKey1, 0);
+        twammHook.updateOrder(key, orderKey2, 0);
+
+        uint256 token0Owed = twammHook.tokensOwed(key.currency0, orderKey2.owner);
+        uint256 token1Owed = twammHook.tokensOwed(key.currency1, orderKey2.owner);
+
+        assertEq(token0Owed, orderAmount);
+        assertEq(token1Owed, orderAmount);
+    }
+
+    function _submitOrderAs(address owner, bool zeroForOne, uint256 amount, uint160 endingtime)
+        internal
+        returns (ITWAMM.OrderKey memory oKey)
+    {
+        token0.transfer(address(owner), amount);
+        token1.transfer(address(owner), amount);
+
+        vm.startPrank(owner);
+        token0.approve(address(twammHook), amount);
+        token1.approve(address(twammHook), amount);
+
+        oKey = ITWAMM.OrderKey(owner, endingtime, zeroForOne);
+
+        twammHook.submitOrder(key, oKey, amount);
+        vm.stopPrank();
     }
 
     function _submitOrderSingleDirection(bool zeroForOne, uint256 amount, uint256 endingtime)
