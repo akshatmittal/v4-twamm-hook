@@ -2,6 +2,7 @@
 evm_version = "cancun"
 ffi = true
 libs = ["lib"]
+optimizer = false
 out = "out"
 solc_version = "0.8.26"
 src = "src"

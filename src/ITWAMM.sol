@@ -108,7 +108,7 @@ interface ITWAMM {
     /// @return orderId The bytes32 ID of the order
     function submitOrder(PoolKey calldata key, bool zeroForOne, uint256 duration, uint256 amountIn)
         external
-        returns (bytes32 orderId);
+        returns (bytes32 orderId, OrderKey memory orderKey);
 
     /// @notice Update an existing long term order with current earnings, optionally modify the amount selling.
     /// @param key The PoolKey for which to identify the amm pool of the order

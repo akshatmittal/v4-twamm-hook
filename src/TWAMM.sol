@@ -155,7 +155,7 @@ contract TWAMM is BaseHook, ITWAMM {
             revert NotInitialized();
         }
 
-        (bool zeroForOne, uint160 sqrtPriceLimitX96, uint256 maxSwapAmount) =
+        (bool zeroForOne, uint160 sqrtPriceLimitX96, int256 maxSwapAmount) =
             _executeTWAMMOrders(twamm, key, PoolParamsOnExecute(sqrtPriceX96, poolManager.getLiquidity(poolId), 0));
 
         if (sqrtPriceLimitX96 != 0 && sqrtPriceLimitX96 != sqrtPriceX96) {
@@ -164,17 +164,21 @@ contract TWAMM is BaseHook, ITWAMM {
              *      specified limits.
              */
             uint256 maxAvailable = zeroForOne ? key.currency0.balanceOfSelf() : key.currency1.balanceOfSelf();
-            uint256 maxToSwap = maxSwapAmount > maxAvailable ? maxAvailable : maxSwapAmount;
+            uint256 maxToSwap = maxSwapAmount > 0 ? uint256(maxSwapAmount) : uint256(-maxSwapAmount);
 
             console2.log("maxAvailable", maxAvailable);
             console2.log("maxSwapAmount", maxSwapAmount);
+            console2.log("maxToSwap", maxToSwap);
+            console2.log("zeroForOne", zeroForOne);
 
-            if (poolManager.isUnlocked()) {
-                _processSwap(key, IPoolManager.SwapParams(zeroForOne, -maxToSwap.toInt256(), sqrtPriceLimitX96)); // @audit Is this fully safe?
-            } else {
-                poolManager.unlock(
-                    abi.encode(key, IPoolManager.SwapParams(zeroForOne, -maxToSwap.toInt256(), sqrtPriceLimitX96))
-                );
+            if (maxToSwap != 0) {
+                if (poolManager.isUnlocked()) {
+                    _processSwap(key, IPoolManager.SwapParams(zeroForOne, -maxToSwap.toInt256(), sqrtPriceLimitX96)); // @audit Is this fully safe?
+                } else {
+                    poolManager.unlock(
+                        abi.encode(key, IPoolManager.SwapParams(zeroForOne, -maxToSwap.toInt256(), sqrtPriceLimitX96))
+                    );
+                }
             }
         }
     }
@@ -182,13 +186,13 @@ contract TWAMM is BaseHook, ITWAMM {
     /// @inheritdoc ITWAMM
     function submitOrder(PoolKey calldata key, bool zeroForOne, uint256 duration, uint256 amountIn)
         external
-        returns (bytes32 orderId)
+        returns (bytes32 orderId, OrderKey memory orderKey)
     {
         executeTWAMMOrders(key);
 
         PoolId poolId = key.toId();
         uint256 intervalTime = _getIntervalTime(block.timestamp);
-        OrderKey memory orderKey = OrderKey(msg.sender, (intervalTime + duration).toUint160(), zeroForOne);
+        orderKey = OrderKey(msg.sender, (intervalTime + duration).toUint160(), zeroForOne);
         State storage twamm = twammStates[poolId];
 
         if (orderKey.expiration <= block.timestamp) {
@@ -389,14 +393,14 @@ contract TWAMM is BaseHook, ITWAMM {
     struct PoolParamsOnExecute {
         uint160 sqrtPriceX96;
         uint128 liquidity;
-        uint256 maxSwapAmount;
+        int256 maxSwapAmount;
     }
 
     /// @notice Executes all existing long term orders in the TWAMM
     /// @param pool The relevant state of the pool
     function _executeTWAMMOrders(State storage self, PoolKey memory key, PoolParamsOnExecute memory pool)
         internal
-        returns (bool zeroForOne, uint160 newSqrtPriceX96, uint256 maxSwapAmount)
+        returns (bool zeroForOne, uint160 newSqrtPriceX96, int256 maxSwapAmount)
     {
         uint256 currentTimestampAtInterval = _getIntervalTime(block.timestamp);
 
@@ -449,6 +453,8 @@ contract TWAMM is BaseHook, ITWAMM {
 
                 nextExpirationTimestamp += expirationInterval;
 
+                // console2.log("hasOutstandingOrders", _hasOutstandingOrders(self));
+
                 if (!_hasOutstandingOrders(self)) {
                     break;
                 }
@@ -499,9 +505,7 @@ contract TWAMM is BaseHook, ITWAMM {
         private
         returns (PoolParamsOnExecute memory)
     {
-        uint160 initialSqrtPriceX96 = params.pool.sqrtPriceX96;
         uint256 secondsElapsedX96 = params.secondsElapsed * FixedPoint96.Q96;
-
         uint160 finalSqrtPriceX96;
 
         while (true) {
@@ -529,11 +533,10 @@ contract TWAMM is BaseHook, ITWAMM {
                     (uint256 earningsFactorPool0, uint256 earningsFactorPool1) =
                         TwammMath.calculateEarningsUpdates(executionParams, finalSqrtPriceX96);
 
-                    uint256 sellRateActive = (initialSqrtPriceX96 > finalSqrtPriceX96)
-                        ? (self.orderPool0For1.sellRateCurrent)
-                        : (self.orderPool1For0.sellRateCurrent);
+                    int256 sellRateDelta =
+                        -self.orderPool0For1.sellRateCurrent.toInt256() + self.orderPool1For0.sellRateCurrent.toInt256();
 
-                    params.pool.maxSwapAmount += params.secondsElapsed * sellRateActive;
+                    params.pool.maxSwapAmount += params.secondsElapsed.toInt256() * sellRateDelta;
 
                     if (params.nextTimestamp % params.expirationInterval == 0) {
                         self.orderPool0For1.advanceToInterval(params.nextTimestamp, earningsFactorPool0);
@@ -604,13 +607,13 @@ contract TWAMM is BaseHook, ITWAMM {
                     totalEarnings += SqrtPriceMath.getAmount1Delta(
                         params.pool.sqrtPriceX96, finalSqrtPriceX96, params.pool.liquidity, true
                     );
+                    params.pool.maxSwapAmount -= (params.secondsElapsed * orderPool.sellRateCurrent).toInt256();
                 } else {
                     totalEarnings += SqrtPriceMath.getAmount0Delta(
                         params.pool.sqrtPriceX96, finalSqrtPriceX96, params.pool.liquidity, true
                     );
+                    params.pool.maxSwapAmount += (params.secondsElapsed * orderPool.sellRateCurrent).toInt256();
                 }
-
-                params.pool.maxSwapAmount += params.secondsElapsed * orderPool.sellRateCurrent;
 
                 uint256 accruedEarningsFactor = (totalEarnings * FixedPoint96.Q96) / sellRateCurrent;
                 if (params.nextTimestamp % params.expirationInterval == 0) {
@@ -667,7 +670,9 @@ contract TWAMM is BaseHook, ITWAMM {
         unchecked {
             // update pool
             (, int128 liquidityNet) = poolManager.getTickLiquidity(poolKey.toId(), params.initializedTick);
-            if (initializedSqrtPrice < params.pool.sqrtPriceX96) liquidityNet = -liquidityNet;
+            if (initializedSqrtPrice < params.pool.sqrtPriceX96) {
+                liquidityNet = -liquidityNet;
+            }
             params.pool.liquidity = liquidityNet < 0
                 ? params.pool.liquidity - uint128(-liquidityNet)
                 : params.pool.liquidity + uint128(liquidityNet);
@@ -686,7 +691,7 @@ contract TWAMM is BaseHook, ITWAMM {
         nextTickInit = pool.sqrtPriceX96.getTickAtSqrtPrice();
         int24 targetTick = nextSqrtPriceX96.getTickAtSqrtPrice();
         bool searchingLeft = nextSqrtPriceX96 < pool.sqrtPriceX96;
-        bool nextTickInitFurtherThanTarget = false; // initialize as false
+        bool nextTickInitFurtherThanTarget; // initialize as false
 
         // nextTickInit returns the furthest tick within one word if no tick within that word is initialized
         // so we must keep iterating if we haven't reached a tick further than our target tick

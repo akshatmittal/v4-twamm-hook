@@ -16,3 +16,6 @@ docs/
 
 # Node modules
 node_modules/
+
+# Foundry
+lcov.info
