@@ -20,3 +20,7 @@
 - **Maybe**:
 
   - [ ] Write an expression version of the algo?
+
+# Open Questions
+
+So now that we have the `maxSwapAmount` (and after order walking changes mentioned above are added), the algo is calculating both the max swap and the order ending tick. Seems a bit redundant now since they are limiting the same thing in the swap. Wonder if it's worth removing the tick limit and just use the swap limit? Although, doesn't hurt keeping the tick limit since it's a bit more explicit.

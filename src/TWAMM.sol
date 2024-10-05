@@ -142,7 +142,7 @@ contract TWAMM is BaseHook, ITWAMM {
 
     /// @notice Initialize TWAMM state
     function initialize(State storage self) internal {
-        self.lastVirtualOrderTimestamp = block.timestamp;
+        self.lastVirtualOrderTimestamp = _getIntervalTime(block.timestamp);
     }
 
     /// @inheritdoc ITWAMM
@@ -398,21 +398,23 @@ contract TWAMM is BaseHook, ITWAMM {
         internal
         returns (bool zeroForOne, uint160 newSqrtPriceX96, uint256 maxSwapAmount)
     {
+        uint256 currentTimestampAtInterval = _getIntervalTime(block.timestamp);
+
         if (!_hasOutstandingOrders(self)) {
-            self.lastVirtualOrderTimestamp = block.timestamp;
+            self.lastVirtualOrderTimestamp = currentTimestampAtInterval;
 
             return (false, 0, 0);
         }
 
         uint160 initialSqrtPriceX96 = pool.sqrtPriceX96;
         uint256 prevTimestamp = self.lastVirtualOrderTimestamp;
-        uint256 nextExpirationTimestamp = prevTimestamp + (expirationInterval - (prevTimestamp % expirationInterval));
+        uint256 nextExpirationTimestamp = prevTimestamp + expirationInterval;
 
         OrderPool.State storage orderPool0For1 = self.orderPool0For1;
         OrderPool.State storage orderPool1For0 = self.orderPool1For0;
 
         unchecked {
-            while (nextExpirationTimestamp <= block.timestamp) {
+            while (nextExpirationTimestamp <= currentTimestampAtInterval) {
                 if (
                     orderPool0For1.sellRateEndingAtInterval[nextExpirationTimestamp] > 0
                         || orderPool1For0.sellRateEndingAtInterval[nextExpirationTimestamp] > 0
@@ -441,19 +443,28 @@ contract TWAMM is BaseHook, ITWAMM {
                             )
                         );
                     }
+
                     prevTimestamp = nextExpirationTimestamp;
                 }
+
                 nextExpirationTimestamp += expirationInterval;
 
-                if (!_hasOutstandingOrders(self)) break;
+                if (!_hasOutstandingOrders(self)) {
+                    break;
+                }
             }
 
-            if (prevTimestamp < block.timestamp && _hasOutstandingOrders(self)) {
+            if (prevTimestamp < currentTimestampAtInterval && _hasOutstandingOrders(self)) {
                 if (orderPool0For1.sellRateCurrent != 0 && orderPool1For0.sellRateCurrent != 0) {
                     pool = _advanceToNewTimestamp(
                         self,
                         key,
-                        AdvanceParams(expirationInterval, block.timestamp, block.timestamp - prevTimestamp, pool)
+                        AdvanceParams(
+                            expirationInterval,
+                            currentTimestampAtInterval,
+                            currentTimestampAtInterval - prevTimestamp,
+                            pool
+                        )
                     );
                 } else {
                     pool = _advanceTimestampForSinglePoolSell(
@@ -461,8 +472,8 @@ contract TWAMM is BaseHook, ITWAMM {
                         key,
                         AdvanceSingleParams(
                             expirationInterval,
-                            block.timestamp,
-                            block.timestamp - prevTimestamp,
+                            currentTimestampAtInterval,
+                            currentTimestampAtInterval - prevTimestamp,
                             pool,
                             orderPool0For1.sellRateCurrent != 0
                         )
@@ -471,7 +482,7 @@ contract TWAMM is BaseHook, ITWAMM {
             }
         }
 
-        self.lastVirtualOrderTimestamp = block.timestamp;
+        self.lastVirtualOrderTimestamp = currentTimestampAtInterval;
         newSqrtPriceX96 = pool.sqrtPriceX96;
         zeroForOne = initialSqrtPriceX96 > newSqrtPriceX96;
         maxSwapAmount = pool.maxSwapAmount;

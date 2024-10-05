@@ -47,6 +47,8 @@ contract TWAMMFlowTest is Test, Fixtures {
                 ^ (0x4444 << 144) // Namespace the hook to avoid collisions
         );
 
+        vm.warp(10_000);
+
         bytes memory constructorArgs = abi.encode(manager, uint256(10_000));
         deployCodeTo("TWAMM.sol:TWAMM", constructorArgs, flags);
         twammHook = TWAMM(flags);

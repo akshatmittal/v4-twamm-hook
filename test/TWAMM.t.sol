@@ -49,6 +49,8 @@ contract TWAMMTest is Test, Fixtures {
                 ^ (0x4444 << 144) // Namespace the hook to avoid collisions
         );
 
+        vm.warp(10_000);
+
         // `TWAMMExtended` is the same as `TWAMM` with extra helper functions
         bytes memory constructorArgs = abi.encode(manager, uint256(10_000));
         deployCodeTo("TWAMMExtended.sol:TWAMMExtended", constructorArgs, flags);
