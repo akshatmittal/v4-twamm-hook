@@ -115,9 +115,7 @@ contract TWAMMFlowTest is Test, Fixtures {
         uint256 balance1After;
 
         (balance0Before, balance1Before) = (key.currency0.balanceOfSelf(), key.currency1.balanceOfSelf());
-        twammHook.updateOrder(key, oKey, 0);
-        twammHook.claimTokens(key.currency0, address(this), 0);
-        twammHook.claimTokens(key.currency1, address(this), 0);
+        twammHook.syncAndClaimTokens(key, oKey);
         (balance0After, balance1After) = (key.currency0.balanceOfSelf(), key.currency1.balanceOfSelf());
 
         assertEq(balance0After - balance0Before, 0); // It's a zeroForOne trade
@@ -130,9 +128,7 @@ contract TWAMMFlowTest is Test, Fixtures {
         swap(key, true, -int256(0.0001 ether), ZERO_BYTES);
 
         (balance0Before, balance1Before) = (key.currency0.balanceOfSelf(), key.currency1.balanceOfSelf());
-        twammHook.updateOrder(key, oKey, 0);
-        twammHook.claimTokens(key.currency0, address(this), 0);
-        twammHook.claimTokens(key.currency1, address(this), 0);
+        twammHook.syncAndClaimTokens(key, oKey);
         (balance0After, balance1After) = (key.currency0.balanceOfSelf(), key.currency1.balanceOfSelf());
 
         assertEq(balance0After - balance0Before, 0); // It's a zeroForOne trade
@@ -211,8 +207,8 @@ contract TWAMMFlowTest is Test, Fixtures {
         ITWAMM.OrderKey memory orderKey4 = _submitOrderAs(address(0xA2), false, orderAmount * 2, 50000);
 
         vm.warp(40000);
-        twammHook.updateOrder(key, orderKey1, 0);
-        twammHook.updateOrder(key, orderKey2, 0);
+        twammHook.sync(key, orderKey1, false);
+        twammHook.sync(key, orderKey2, false);
 
         uint256 token0Owed = twammHook.tokensOwed(key.currency0, orderKey2.owner);
         uint256 token1Owed = twammHook.tokensOwed(key.currency1, orderKey2.owner);

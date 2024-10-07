@@ -7,15 +7,13 @@ import {Currency, CurrencyLibrary} from "@uniswap/v4-core/src/types/Currency.sol
 import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 
+import {OrderPool} from "@lib/OrderPool.sol";
+
 interface ITWAMM {
     /// @notice Thrown when account other than owner attempts to interact with an order
     /// @param owner The owner of the order
     /// @param currentAccount The invalid account attempting to interact with the order
     error MustBeOwner(address owner, address currentAccount);
-
-    /// @notice Thrown when trying to cancel an already completed order
-    /// @param orderKey The orderKey
-    error CannotModifyCompletedOrder(OrderKey orderKey);
 
     /// @notice Thrown when trying to submit an order with an expiration that isn't on the interval.
     /// @param expiration The expiration timestamp of the order
@@ -36,12 +34,6 @@ interface ITWAMM {
     /// @param orderKey The already existing orderKey
     error OrderDoesNotExist(OrderKey orderKey);
 
-    /// @notice Thrown when trying to subtract more value from a long term order than exists
-    /// @param orderKey The orderKey
-    /// @param unsoldAmount The amount still unsold
-    /// @param amountDelta The amount delta for the order
-    error InvalidAmountDelta(OrderKey orderKey, uint256 unsoldAmount, int256 amountDelta);
-
     /// @notice Thrown when submitting an order with a sellRate of 0
     error SellRateCannotBeZero();
 
@@ -51,6 +43,18 @@ interface ITWAMM {
     struct Order {
         uint256 sellRate;
         uint256 earningsFactorLast;
+    }
+
+    /// @notice Contains full state related to the TWAMM
+    /// @member lastVirtualOrderTimestamp Last timestamp in which virtual orders were executed
+    /// @member orderPool0For1 Order pool trading token0 for token1 of pool
+    /// @member orderPool1For0 Order pool trading token1 for token0 of pool
+    /// @member orders Mapping of orderId to individual orders on pool
+    struct TWAMMState {
+        uint256 lastVirtualOrderTimestamp;
+        OrderPool.State orderPool0For1;
+        OrderPool.State orderPool1For0;
+        mapping(bytes32 => Order) orders;
     }
 
     /// @notice Information that identifies an order
@@ -79,25 +83,19 @@ interface ITWAMM {
         uint256 earningsFactorLast
     );
 
-    /// @notice Emitted when a long term order is updated
+    /// @notice Emitted when an order is synced
     /// @param poolId The id of the corresponding pool
     /// @param owner The owner of the existing order
-    /// @param expiration The expiration timestamp of the order
-    /// @param zeroForOne Whether the order is selling token 0 for token 1
-    /// @param sellRate The updated sellRate of tokens per second being sold in the order
+    /// @param tokens0OwedDelta Change in owed tokens0
+    /// @param tokens1OwedDelta Change in owed tokens1
     /// @param earningsFactorLast The current earningsFactor of the order pool
-    ///   (since updated orders will claim existing earnings)
-    event UpdateOrder(
+    event SyncOrder(
         PoolId indexed poolId,
         address indexed owner,
-        uint160 expiration,
-        bool zeroForOne,
-        uint256 sellRate,
+        uint256 tokens0OwedDelta,
+        uint256 tokens1OwedDelta,
         uint256 earningsFactorLast
     );
-
-    /// @notice Time interval on which orders are allowed to expire. Conserves processing needed on execute.
-    function expirationInterval() external view returns (uint256);
 
     /// @notice Submits a new long term order into the TWAMM. Also executes TWAMM orders if not up to date.
     /// @param key The PoolKey for which to identify the amm pool of the order
@@ -110,23 +108,21 @@ interface ITWAMM {
         external
         returns (bytes32 orderId, OrderKey memory orderKey);
 
-    /// @notice Update an existing long term order with current earnings, optionally modify the amount selling.
+    /// @notice Syncs the current pool and order state
     /// @param key The PoolKey for which to identify the amm pool of the order
     /// @param orderKey The OrderKey for which to identify the order
-    /// @param amountDelta The delta for the order sell amount. Negative to remove from order, positive to add, or
-    ///    -1 to remove full amount from order.
-    function updateOrder(PoolKey calldata key, OrderKey calldata orderKey, int256 amountDelta)
+    /// @param removeRemaining If true, the order will be removed after syncing
+    /// @return tokens0OwedDelta Change to token0 after syncing
+    /// @return tokens1OwedDelta Change to token1 after syncing
+    function sync(PoolKey calldata key, OrderKey calldata orderKey, bool removeRemaining)
         external
-        returns (uint256 tokens0Owed, uint256 tokens1Owed);
+        returns (uint256 tokens0OwedDelta, uint256 tokens1OwedDelta);
 
     /// @notice Claim tokens owed from TWAMM contract
-    /// @param token The token to claim
-    /// @param to The receipient of the claim
-    /// @param amountRequested The amount of tokens requested to claim. Set to 0 to claim all.
-    /// @return amountTransferred The total token amount to be collected
-    function claimTokens(Currency token, address to, uint256 amountRequested)
-        external
-        returns (uint256 amountTransferred);
+    /// @param key The PoolKey for which to identify the amm pool of the order
+    /// @return tokens0Claimed The total token0 amount collected
+    /// @return tokens1Claimed The total token1 amount collected
+    function claimTokens(PoolKey calldata key) external returns (uint256 tokens0Claimed, uint256 tokens1Claimed);
 
     /// @notice Executes TWAMM orders on the pool, swapping on the pool itself to make up the difference between the
     /// two TWAMM pools swapping against each other
