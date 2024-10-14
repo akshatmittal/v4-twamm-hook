@@ -1,17 +1,19 @@
 - **Order Walking**:
 
+  - [x] Implement `maxSwapAmount` which denotes the max delta that is swapped into the underlying pool. Extends the current tick ending logic, but more accurate due to no precision loss and explicit.
   - [x] Account for self-cancelling trades in `maxSwapAmount`.
 
 - **Order Logic**:
 
+  - [x] Switch to support unlocked pool manager, well, for swaps.
   - [ ] Think about unlocked pool manager more, don't think it's an issue since we use `delta` properly, but doesn't hurt thinking about it more.
   - [x] Change `submitOrder` to take `duration` instead of `endTime`.
   - [x] Update order logic has a bug with calculating owed tokens when there's multiple updates to future earnings factor.
-  - [ ] Remove the ability to modify orders and only allow cancelling them. Cancelling then creating a new order is equal to modifying the order.
+  - [x] Remove the ability to modify orders and only allow cancelling them. Cancelling then creating a new order is equal to modifying the order, but more explicit. (removes race condition)
 
 - **Helpers**:
 
-  - [ ] Add combined function for `updateOrder` and `claimTokens`, there's no reason for them to be separate here.
+  - [x] Add combined function for `updateOrder` and `claimTokens`, there's no reason for them to be separate here.
 
 - **Testing**:
 

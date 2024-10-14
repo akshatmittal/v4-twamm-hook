@@ -55,7 +55,6 @@ contract TWAMMComplexTest is Test, Fixtures {
         deployCodeTo("TWAMM.sol:TWAMM", constructorArgs, flags);
         twammHook = TWAMM(flags);
 
-        // Zero fee to simplify calculations
         key = PoolKey(currency0, currency1, 3000, 1, twammHook);
         poolId = key.toId();
         manager.initialize(key, SQRT_PRICE_1_1, ZERO_BYTES);
@@ -216,9 +215,7 @@ contract TWAMMComplexTest is Test, Fixtures {
 
     function _updateOrderAndClaim(ITWAMM.OrderKey memory oKey) internal {
         vm.startPrank(oKey.owner);
-        twammHook.updateOrder(key, oKey, 0);
-        twammHook.claimTokens(key.currency0, oKey.owner, 0);
-        twammHook.claimTokens(key.currency1, oKey.owner, 0);
+        twammHook.syncAndClaimTokens(key, oKey);
         vm.stopPrank();
     }
 

@@ -43,26 +43,11 @@ contract TWAMM is BaseHook, ITWAMM {
 
     bytes internal constant ZERO_BYTES = bytes("");
 
-    int256 internal constant MIN_DELTA = -1;
-    bool internal constant ZERO_FOR_ONE = true;
-    bool internal constant ONE_FOR_ZERO = false;
-
-    /// @notice Contains full state related to the TWAMM
-    /// @member lastVirtualOrderTimestamp Last timestamp in which virtual orders were executed
-    /// @member orderPool0For1 Order pool trading token0 for token1 of pool
-    /// @member orderPool1For0 Order pool trading token1 for token0 of pool
-    /// @member orders Mapping of orderId to individual orders on pool
-    struct State {
-        uint256 lastVirtualOrderTimestamp;
-        OrderPool.State orderPool0For1;
-        OrderPool.State orderPool1For0;
-        mapping(bytes32 => Order) orders;
-    }
-
-    /// @inheritdoc ITWAMM
+    /// @notice Time interval on which orders are allowed to expire. Conserves processing needed on execute.
     uint256 public immutable expirationInterval;
-    // twammStates[poolId] => Twamm.State
-    mapping(PoolId => State) internal twammStates;
+
+    // twammStates[poolId] => TWAMMState
+    mapping(PoolId => TWAMMState) internal twammStates;
     // tokensOwed[token][owner] => amountOwed
     mapping(Currency => mapping(address => uint256)) public tokensOwed;
 
@@ -98,6 +83,7 @@ contract TWAMM is BaseHook, ITWAMM {
     {
         // one-time initialization enforced in PoolManager
         initialize(_getTWAMM(key));
+
         return BaseHook.beforeInitialize.selector;
     }
 
@@ -108,6 +94,7 @@ contract TWAMM is BaseHook, ITWAMM {
         bytes calldata
     ) external override onlyPoolManager returns (bytes4) {
         executeTWAMMOrders(key);
+
         return BaseHook.beforeAddLiquidity.selector;
     }
 
@@ -118,6 +105,7 @@ contract TWAMM is BaseHook, ITWAMM {
         returns (bytes4, BeforeSwapDelta, uint24)
     {
         executeTWAMMOrders(key);
+
         return (BaseHook.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
     }
 
@@ -134,14 +122,15 @@ contract TWAMM is BaseHook, ITWAMM {
         view
         returns (uint256 sellRateCurrent, uint256 earningsFactorCurrent)
     {
-        State storage twamm = _getTWAMM(key);
+        TWAMMState storage twamm = _getTWAMM(key);
+        
         return zeroForOne
             ? (twamm.orderPool0For1.sellRateCurrent, twamm.orderPool0For1.earningsFactorCurrent)
             : (twamm.orderPool1For0.sellRateCurrent, twamm.orderPool1For0.earningsFactorCurrent);
     }
 
     /// @notice Initialize TWAMM state
-    function initialize(State storage self) internal {
+    function initialize(TWAMMState storage self) internal {
         self.lastVirtualOrderTimestamp = _getIntervalTime(block.timestamp);
     }
 
@@ -149,7 +138,7 @@ contract TWAMM is BaseHook, ITWAMM {
     function executeTWAMMOrders(PoolKey memory key) public {
         PoolId poolId = key.toId();
         (uint160 sqrtPriceX96,,,) = poolManager.getSlot0(poolId);
-        State storage twamm = twammStates[poolId];
+        TWAMMState storage twamm = twammStates[poolId];
 
         if (twamm.lastVirtualOrderTimestamp == 0) {
             revert NotInitialized();
@@ -158,7 +147,7 @@ contract TWAMM is BaseHook, ITWAMM {
         (bool zeroForOne, uint160 sqrtPriceLimitX96, int256 maxSwapAmount) =
             _executeTWAMMOrders(twamm, key, PoolParamsOnExecute(sqrtPriceX96, poolManager.getLiquidity(poolId), 0));
 
-        if (sqrtPriceLimitX96 != 0 && sqrtPriceLimitX96 != sqrtPriceX96) {
+        if (sqrtPriceLimitX96 != 0 && sqrtPriceLimitX96 != sqrtPriceX96 && maxSwapAmount != 0) {
             /**
              * @dev V3 Math library has precision issues, these two limits are placed to prevent orders going over the
              *      specified limits.
@@ -171,14 +160,12 @@ contract TWAMM is BaseHook, ITWAMM {
             console2.log("maxToSwap", maxToSwap);
             console2.log("zeroForOne", zeroForOne);
 
-            if (maxToSwap != 0) {
-                if (poolManager.isUnlocked()) {
-                    _processSwap(key, IPoolManager.SwapParams(zeroForOne, -maxToSwap.toInt256(), sqrtPriceLimitX96)); // @audit Is this fully safe?
-                } else {
-                    poolManager.unlock(
-                        abi.encode(key, IPoolManager.SwapParams(zeroForOne, -maxToSwap.toInt256(), sqrtPriceLimitX96))
-                    );
-                }
+            if (poolManager.isUnlocked()) {
+                _processSwap(key, IPoolManager.SwapParams(zeroForOne, -maxToSwap.toInt256(), sqrtPriceLimitX96)); // @audit Is this fully safe?
+            } else {
+                poolManager.unlock(
+                    abi.encode(key, IPoolManager.SwapParams(zeroForOne, -maxToSwap.toInt256(), sqrtPriceLimitX96))
+                );
             }
         }
     }
@@ -191,9 +178,9 @@ contract TWAMM is BaseHook, ITWAMM {
         executeTWAMMOrders(key);
 
         PoolId poolId = key.toId();
-        uint256 intervalTime = _getIntervalTime(block.timestamp);
-        orderKey = OrderKey(msg.sender, (intervalTime + duration).toUint160(), zeroForOne);
-        State storage twamm = twammStates[poolId];
+        uint256 currentTimestampAtInterval = _getIntervalTime(block.timestamp);
+        orderKey = OrderKey(msg.sender, (currentTimestampAtInterval + duration).toUint160(), zeroForOne);
+        TWAMMState storage twamm = twammStates[poolId];
 
         if (orderKey.expiration <= block.timestamp) {
             revert ExpirationLessThanBlocktime(orderKey.expiration);
@@ -222,68 +209,77 @@ contract TWAMM is BaseHook, ITWAMM {
     /// @notice Submits a new long term order into the TWAMM
     /// @dev executeTWAMMOrders must be executed up to current timestamp before calling submitOrder
     /// @param orderKey The OrderKey for the new order
-    function _submitOrder(State storage self, OrderKey memory orderKey, uint256 sellRate)
+    function _submitOrder(TWAMMState storage self, OrderKey memory orderKey, uint256 sellRate)
         internal
         returns (bytes32 orderId)
     {
-        if (orderKey.owner != msg.sender) revert MustBeOwner(orderKey.owner, msg.sender);
-        if (sellRate == 0) revert SellRateCannotBeZero();
-        if (orderKey.expiration % expirationInterval != 0) revert ExpirationNotOnInterval(orderKey.expiration);
+        if (orderKey.owner != msg.sender) {
+            revert MustBeOwner(orderKey.owner, msg.sender);
+        }
+        if (sellRate == 0) {
+            revert SellRateCannotBeZero();
+        }
+        if (orderKey.expiration % expirationInterval != 0) {
+            revert ExpirationNotOnInterval(orderKey.expiration);
+        }
 
         orderId = _orderId(orderKey);
-        if (self.orders[orderId].sellRate != 0) revert OrderAlreadyExists(orderKey);
+        if (self.orders[orderId].sellRate != 0) {
+            revert OrderAlreadyExists(orderKey);
+        }
 
         OrderPool.State storage orderPool = orderKey.zeroForOne ? self.orderPool0For1 : self.orderPool1For0;
 
-        unchecked {
-            orderPool.sellRateCurrent += sellRate;
-            orderPool.sellRateEndingAtInterval[orderKey.expiration] += sellRate;
-        }
+        orderPool.sellRateCurrent += sellRate;
+        orderPool.sellRateEndingAtInterval[orderKey.expiration] += sellRate;
 
         self.orders[orderId] = Order({sellRate: sellRate, earningsFactorLast: orderPool.earningsFactorCurrent});
     }
 
-    /// @inheritdoc ITWAMM
-    function updateOrder(PoolKey memory key, OrderKey memory orderKey, int256 amountDelta)
+    function syncAndClaimTokens(PoolKey memory key, OrderKey memory orderKey)
         external
-        returns (uint256 tokens0Owed, uint256 tokens1Owed)
+        returns (uint256 tokens0Claimed, uint256 tokens1Claimed)
     {
-        PoolId poolId = key.toId();
-        State storage twamm = twammStates[poolId];
+        // Calls executeTWAMMOrders
+        sync(key, orderKey, false);
 
-        executeTWAMMOrders(key);
-
-        // This call reverts if the caller is not the owner of the order
-        (uint256 buyTokensOwed, uint256 sellTokensOwed, uint256 newSellrate, uint256 newEarningsFactorLast) =
-            _updateOrder(twamm, orderKey, amountDelta);
-
-        if (orderKey.zeroForOne) {
-            tokens0Owed += sellTokensOwed;
-            tokens1Owed += buyTokensOwed;
-        } else {
-            tokens0Owed += buyTokensOwed;
-            tokens1Owed += sellTokensOwed;
-        }
-
-        tokensOwed[key.currency0][orderKey.owner] += tokens0Owed;
-        tokensOwed[key.currency1][orderKey.owner] += tokens1Owed;
-
-        if (amountDelta > 0) {
-            IERC20Minimal(orderKey.zeroForOne ? Currency.unwrap(key.currency0) : Currency.unwrap(key.currency1))
-                .safeTransferFrom(msg.sender, address(this), uint256(amountDelta));
-        }
-
-        emit UpdateOrder(
-            poolId, orderKey.owner, orderKey.expiration, orderKey.zeroForOne, newSellrate, newEarningsFactorLast
-        );
+        tokens0Claimed = _claimTokens(key.currency0);
+        tokens1Claimed = _claimTokens(key.currency1);
     }
 
-    function _updateOrder(State storage self, OrderKey memory orderKey, int256 amountDelta)
-        internal
-        returns (uint256 buyTokensOwed, uint256 sellTokensOwed, uint256 newSellRate, uint256 earningsFactorLast)
+    /// @inheritdoc ITWAMM
+    function sync(PoolKey memory key, OrderKey memory orderKey, bool removeRemaining)
+        public
+        returns (uint256 tokens0OwedDelta, uint256 tokens1OwedDelta)
     {
-        Order storage order = _getOrder(self, orderKey);
-        OrderPool.State storage orderPool = orderKey.zeroForOne ? self.orderPool0For1 : self.orderPool1For0;
+        executeTWAMMOrders(key);
+
+        (uint256 buyTokensOwed, uint256 sellTokensOwed, uint256 newEarningsFactorLast) =
+            _sync(key, orderKey, removeRemaining);
+
+        if (orderKey.zeroForOne) {
+            tokens0OwedDelta += sellTokensOwed;
+            tokens1OwedDelta += buyTokensOwed;
+        } else {
+            tokens0OwedDelta += buyTokensOwed;
+            tokens1OwedDelta += sellTokensOwed;
+        }
+
+        tokensOwed[key.currency0][orderKey.owner] += tokens0OwedDelta;
+        tokensOwed[key.currency1][orderKey.owner] += tokens1OwedDelta;
+
+        emit SyncOrder(key.toId(), orderKey.owner, tokens0OwedDelta, tokens1OwedDelta, newEarningsFactorLast);
+    }
+
+    function _sync(PoolKey memory key, OrderKey memory orderKey, bool removeRemaining)
+        internal
+        returns (uint256 buyTokensOwed, uint256 sellTokensOwed, uint256 earningsFactorLast)
+    {
+        PoolId poolId = key.toId();
+        TWAMMState storage twamm = twammStates[poolId];
+        Order storage order = _getOrder(twamm, orderKey);
+
+        OrderPool.State storage orderPool = orderKey.zeroForOne ? twamm.orderPool0For1 : twamm.orderPool1For0;
         bool isOrderExpired = orderKey.expiration <= block.timestamp;
 
         if (orderKey.owner != msg.sender) {
@@ -292,68 +288,42 @@ contract TWAMM is BaseHook, ITWAMM {
         if (order.sellRate == 0) {
             revert OrderDoesNotExist(orderKey);
         }
-        if (amountDelta != 0 && isOrderExpired) {
-            revert CannotModifyCompletedOrder(orderKey);
+
+        earningsFactorLast =
+            isOrderExpired ? orderPool.earningsFactorAtInterval[orderKey.expiration] : orderPool.earningsFactorCurrent;
+        buyTokensOwed = ((earningsFactorLast - order.earningsFactorLast) * order.sellRate) >> FixedPoint96.RESOLUTION;
+
+        if (isOrderExpired) {
+            delete twamm.orders[_orderId(orderKey)];
+        } else {
+            order.earningsFactorLast = earningsFactorLast;
         }
 
-        unchecked {
-            earningsFactorLast = isOrderExpired
-                ? orderPool.earningsFactorAtInterval[orderKey.expiration]
-                : orderPool.earningsFactorCurrent;
-            buyTokensOwed =
-                ((earningsFactorLast - order.earningsFactorLast) * order.sellRate) >> FixedPoint96.RESOLUTION;
+        if (removeRemaining && !isOrderExpired) {
+            uint256 durationDelta = orderKey.expiration - _getIntervalTime(block.timestamp);
+            sellTokensOwed = order.sellRate * durationDelta;
 
-            if (isOrderExpired) {
-                delete self.orders[_orderId(orderKey)];
-            } else {
-                order.earningsFactorLast = earningsFactorLast;
-            }
-
-            // TODO: Remove this pls
-            if (amountDelta != 0) {
-                uint256 duration = orderKey.expiration - block.timestamp;
-                uint256 unsoldAmount = order.sellRate * duration;
-                if (amountDelta == MIN_DELTA) amountDelta = -(unsoldAmount.toInt256());
-                int256 newSellAmount = unsoldAmount.toInt256() + amountDelta;
-                if (newSellAmount < 0) revert InvalidAmountDelta(orderKey, unsoldAmount, amountDelta);
-
-                newSellRate = uint256(newSellAmount) / duration;
-
-                if (amountDelta < 0) {
-                    uint256 sellRateDelta = order.sellRate - newSellRate;
-                    orderPool.sellRateCurrent -= sellRateDelta;
-                    orderPool.sellRateEndingAtInterval[orderKey.expiration] -= sellRateDelta;
-                    sellTokensOwed = uint256(-amountDelta);
-                } else {
-                    uint256 sellRateDelta = newSellRate - order.sellRate;
-                    orderPool.sellRateCurrent += sellRateDelta;
-                    orderPool.sellRateEndingAtInterval[orderKey.expiration] += sellRateDelta;
-                }
-                if (newSellRate == 0) {
-                    delete self.orders[_orderId(orderKey)];
-                } else {
-                    order.sellRate = newSellRate;
-                }
-            }
+            delete twamm.orders[_orderId(orderKey)];
         }
     }
 
-    /// @inheritdoc ITWAMM
-    function claimTokens(Currency token, address to, uint256 amountRequested)
-        external
-        returns (uint256 amountTransferred)
-    {
+    function _claimTokens(Currency token) internal returns (uint256 amountTransferred) {
         uint256 currentBalance = token.balanceOfSelf();
         amountTransferred = tokensOwed[token][msg.sender];
-        if (amountRequested != 0 && amountRequested < amountTransferred) {
-            amountTransferred = amountRequested;
-        }
+
         if (currentBalance < amountTransferred) {
             amountTransferred = currentBalance; // to catch precision errors
         }
 
-        tokensOwed[token][msg.sender] -= amountTransferred;
-        IERC20Minimal(Currency.unwrap(token)).safeTransfer(to, amountTransferred);
+        tokensOwed[token][msg.sender] -= amountTransferred; // @audit Should set this to 0 maybe?
+
+        IERC20Minimal(Currency.unwrap(token)).safeTransfer(msg.sender, amountTransferred);
+    }
+
+    /// @inheritdoc ITWAMM
+    function claimTokens(PoolKey calldata key) external returns (uint256 tokens0Claimed, uint256 tokens1Claimed) {
+        tokens0Claimed = _claimTokens(key.currency0);
+        tokens1Claimed = _claimTokens(key.currency1);
     }
 
     function _unlockCallback(bytes calldata rawData) internal override returns (bytes memory) {
@@ -362,7 +332,7 @@ contract TWAMM is BaseHook, ITWAMM {
 
         _processSwap(key, swapParams);
 
-        return bytes("");
+        return ZERO_BYTES;
     }
 
     function _processSwap(PoolKey memory key, IPoolManager.SwapParams memory swapParams) internal {
@@ -386,7 +356,7 @@ contract TWAMM is BaseHook, ITWAMM {
         }
     }
 
-    function _getTWAMM(PoolKey memory key) internal view returns (State storage) {
+    function _getTWAMM(PoolKey memory key) internal view returns (TWAMMState storage) {
         return twammStates[key.toId()];
     }
 
@@ -398,7 +368,7 @@ contract TWAMM is BaseHook, ITWAMM {
 
     /// @notice Executes all existing long term orders in the TWAMM
     /// @param pool The relevant state of the pool
-    function _executeTWAMMOrders(State storage self, PoolKey memory key, PoolParamsOnExecute memory pool)
+    function _executeTWAMMOrders(TWAMMState storage self, PoolKey memory key, PoolParamsOnExecute memory pool)
         internal
         returns (bool zeroForOne, uint160 newSqrtPriceX96, int256 maxSwapAmount)
     {
@@ -501,7 +471,7 @@ contract TWAMM is BaseHook, ITWAMM {
         PoolParamsOnExecute pool;
     }
 
-    function _advanceToNewTimestamp(State storage self, PoolKey memory poolKey, AdvanceParams memory params)
+    function _advanceToNewTimestamp(TWAMMState storage self, PoolKey memory poolKey, AdvanceParams memory params)
         private
         returns (PoolParamsOnExecute memory)
     {
@@ -565,7 +535,7 @@ contract TWAMM is BaseHook, ITWAMM {
     }
 
     function _advanceTimestampForSinglePoolSell(
-        State storage self,
+        TWAMMState storage self,
         PoolKey memory poolKey,
         AdvanceSingleParams memory params
     ) private returns (PoolParamsOnExecute memory) {
@@ -639,7 +609,7 @@ contract TWAMM is BaseHook, ITWAMM {
     }
 
     function _advanceTimeThroughTickCrossing(
-        State storage self,
+        TWAMMState storage self,
         PoolKey memory poolKey,
         TickCrossingParams memory params
     ) private returns (PoolParamsOnExecute memory, uint256) {
@@ -715,7 +685,7 @@ contract TWAMM is BaseHook, ITWAMM {
         }
     }
 
-    function _getOrder(State storage self, OrderKey memory key) internal view returns (Order storage) {
+    function _getOrder(TWAMMState storage self, OrderKey memory key) internal view returns (Order storage) {
         return self.orders[_orderId(key)];
     }
 
@@ -723,7 +693,7 @@ contract TWAMM is BaseHook, ITWAMM {
         return keccak256(abi.encode(key));
     }
 
-    function _hasOutstandingOrders(State storage self) internal view returns (bool) {
+    function _hasOutstandingOrders(TWAMMState storage self) internal view returns (bool) {
         return self.orderPool0For1.sellRateCurrent != 0 || self.orderPool1For0.sellRateCurrent != 0;
     }
 
