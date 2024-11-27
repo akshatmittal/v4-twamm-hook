@@ -11,6 +11,7 @@
   - [x] Update order logic has a bug with calculating owed tokens when there's multiple updates to future earnings factor.
   - [x] Remove the ability to modify orders and only allow cancelling them. Cancelling then creating a new order is equal to modifying the order, but more explicit. (removes race condition)
   - [x] Allow processing execution in batches while blocking other actions if this is necessary. (This prevents a condition where unbounded gas would brick the contract)
+  - [ ] The hook does not support native ETH, should add a check or add support.
 
 - **Helpers**:
 
