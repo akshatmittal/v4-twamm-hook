@@ -10,6 +10,7 @@
   - [x] Change `submitOrder` to take `duration` instead of `endTime`.
   - [x] Update order logic has a bug with calculating owed tokens when there's multiple updates to future earnings factor.
   - [x] Remove the ability to modify orders and only allow cancelling them. Cancelling then creating a new order is equal to modifying the order, but more explicit. (removes race condition)
+  - [x] Allow processing execution in batches while blocking other actions if this is necessary. (This prevents a condition where unbounded gas would brick the contract)
 
 - **Helpers**:
 
@@ -18,6 +19,7 @@
 - **Testing**:
 
   - [ ] Add more E2E flow/complex scenarios.
+  - [ ] Passing through/burning all liquidity in the pool.
 
 - **Maybe**:
 

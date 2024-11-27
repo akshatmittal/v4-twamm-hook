@@ -123,7 +123,7 @@ contract TWAMM is BaseHook, ITWAMM {
         returns (uint256 sellRateCurrent, uint256 earningsFactorCurrent)
     {
         TWAMMState storage twamm = _getTWAMM(key);
-        
+
         return zeroForOne
             ? (twamm.orderPool0For1.sellRateCurrent, twamm.orderPool0For1.earningsFactorCurrent)
             : (twamm.orderPool1For0.sellRateCurrent, twamm.orderPool1For0.earningsFactorCurrent);
@@ -134,8 +134,7 @@ contract TWAMM is BaseHook, ITWAMM {
         self.lastVirtualOrderTimestamp = _getIntervalTime(block.timestamp);
     }
 
-    /// @inheritdoc ITWAMM
-    function executeTWAMMOrders(PoolKey memory key) public {
+    function executeTWAMMOrders(PoolKey memory key, uint256 targetTimestamp) public {
         PoolId poolId = key.toId();
         (uint160 sqrtPriceX96,,,) = poolManager.getSlot0(poolId);
         TWAMMState storage twamm = twammStates[poolId];
@@ -144,8 +143,9 @@ contract TWAMM is BaseHook, ITWAMM {
             revert NotInitialized();
         }
 
-        (bool zeroForOne, uint160 sqrtPriceLimitX96, int256 maxSwapAmount) =
-            _executeTWAMMOrders(twamm, key, PoolParamsOnExecute(sqrtPriceX96, poolManager.getLiquidity(poolId), 0));
+        (bool zeroForOne, uint160 sqrtPriceLimitX96, int256 maxSwapAmount) = _executeTWAMMOrders(
+            twamm, key, PoolParamsOnExecute(sqrtPriceX96, poolManager.getLiquidity(poolId), 0), targetTimestamp
+        );
 
         if (sqrtPriceLimitX96 != 0 && sqrtPriceLimitX96 != sqrtPriceX96 && maxSwapAmount != 0) {
             /**
@@ -168,6 +168,11 @@ contract TWAMM is BaseHook, ITWAMM {
                 );
             }
         }
+    }
+
+    /// @inheritdoc ITWAMM
+    function executeTWAMMOrders(PoolKey memory key) public override {
+        executeTWAMMOrders(key, block.timestamp);
     }
 
     /// @inheritdoc ITWAMM
@@ -368,11 +373,18 @@ contract TWAMM is BaseHook, ITWAMM {
 
     /// @notice Executes all existing long term orders in the TWAMM
     /// @param pool The relevant state of the pool
-    function _executeTWAMMOrders(TWAMMState storage self, PoolKey memory key, PoolParamsOnExecute memory pool)
-        internal
-        returns (bool zeroForOne, uint160 newSqrtPriceX96, int256 maxSwapAmount)
-    {
-        uint256 currentTimestampAtInterval = _getIntervalTime(block.timestamp);
+    function _executeTWAMMOrders(
+        TWAMMState storage self,
+        PoolKey memory key,
+        PoolParamsOnExecute memory pool,
+        uint256 targetTimestamp
+    ) internal returns (bool zeroForOne, uint160 newSqrtPriceX96, int256 maxSwapAmount) {
+        uint256 currentTimestampAtInterval = _getIntervalTime(targetTimestamp);
+
+        if (currentTimestampAtInterval > block.timestamp || currentTimestampAtInterval < self.lastVirtualOrderTimestamp)
+        {
+            revert InvalidTargetTimestamp();
+        }
 
         if (!_hasOutstandingOrders(self)) {
             self.lastVirtualOrderTimestamp = currentTimestampAtInterval;
@@ -512,6 +524,7 @@ contract TWAMM is BaseHook, ITWAMM {
                         self.orderPool0For1.advanceToInterval(params.nextTimestamp, earningsFactorPool0);
                         self.orderPool1For0.advanceToInterval(params.nextTimestamp, earningsFactorPool1);
                     } else {
+                        // @review This is now useless since timestamps are always on interval.
                         self.orderPool0For1.advanceToCurrentTime(earningsFactorPool0);
                         self.orderPool1For0.advanceToCurrentTime(earningsFactorPool1);
                     }
@@ -589,6 +602,7 @@ contract TWAMM is BaseHook, ITWAMM {
                 if (params.nextTimestamp % params.expirationInterval == 0) {
                     orderPool.advanceToInterval(params.nextTimestamp, accruedEarningsFactor);
                 } else {
+                    // @review This is now useless since timestamps are always on interval.
                     orderPool.advanceToCurrentTime(accruedEarningsFactor);
                 }
 
