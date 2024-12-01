@@ -10,6 +10,7 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {OrderPool} from "@lib/OrderPool.sol";
 
 interface ITWAMM {
+    error PoolWithNativeNotSupported();
     error InvalidTargetTimestamp();
 
     /// @notice Thrown when account other than owner attempts to interact with an order

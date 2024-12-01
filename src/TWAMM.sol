@@ -81,6 +81,10 @@ contract TWAMM is BaseHook, ITWAMM {
         onlyPoolManager
         returns (bytes4)
     {
+        if (key.currency0.isAddressZero()) {
+            revert PoolWithNativeNotSupported();
+        }
+
         // one-time initialization enforced in PoolManager
         initialize(_getTWAMM(key));
 
@@ -148,14 +152,8 @@ contract TWAMM is BaseHook, ITWAMM {
         );
 
         if (sqrtPriceLimitX96 != 0 && sqrtPriceLimitX96 != sqrtPriceX96 && maxSwapAmount != 0) {
-            /**
-             * @dev V3 Math library has precision issues, these two limits are placed to prevent orders going over the
-             *      specified limits.
-             */
-            uint256 maxAvailable = zeroForOne ? key.currency0.balanceOfSelf() : key.currency1.balanceOfSelf();
             uint256 maxToSwap = maxSwapAmount > 0 ? uint256(maxSwapAmount) : uint256(-maxSwapAmount);
 
-            console2.log("maxAvailable", maxAvailable);
             console2.log("maxSwapAmount", maxSwapAmount);
             console2.log("maxToSwap", maxToSwap);
             console2.log("zeroForOne", zeroForOne);
