@@ -116,6 +116,16 @@ interface ITWAMM {
         uint256 earningsFactorLast
     );
 
+     /**
+     * @notice Emitted when an order is fulfilled within a specific pool.
+     * @param poolId The id of the corresponding pool
+     * @param swapParams The parameters of the swap executed to fulfill the order.
+     */
+    event Fulfilment(
+        PoolId indexed poolId,
+        IPoolManager.SwapParams swapParams
+    );
+
     /// @notice Submits a new long term order into the TWAMM. Also executes TWAMM orders if not up to date.
     /// @param key The PoolKey for which to identify the amm pool of the order
     /// @param zeroForOne Trade direction

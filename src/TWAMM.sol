@@ -160,13 +160,16 @@ contract TWAMM is BaseHook, ITWAMM {
             console2.log("maxToSwap", maxToSwap);
             console2.log("zeroForOne", zeroForOne);
 
+            IPoolManager.SwapParams memory swapParams = IPoolManager.SwapParams(zeroForOne, -maxToSwap.toInt256(), sqrtPriceLimitX96); // @audit Is this fully safe?
             if (poolManager.isUnlocked()) {
-                _processSwap(key, IPoolManager.SwapParams(zeroForOne, -maxToSwap.toInt256(), sqrtPriceLimitX96)); // @audit Is this fully safe?
+                _processSwap(key, swapParams);
             } else {
                 poolManager.unlock(
-                    abi.encode(key, IPoolManager.SwapParams(zeroForOne, -maxToSwap.toInt256(), sqrtPriceLimitX96))
+                    abi.encode(key, swapParams)
                 );
             }
+
+            emit Fulfilment(poolId, swapParams);
         }
     }
 
@@ -285,7 +288,7 @@ contract TWAMM is BaseHook, ITWAMM {
         TWAMMState storage twamm = twammStates[poolId];
 
         orderId = _orderId(orderKey);
-        
+
         Order storage order = _getOrder(twamm, orderId);
 
         OrderPool.State storage orderPool = orderKey.zeroForOne ? twamm.orderPool0For1 : twamm.orderPool1For0;
