@@ -114,7 +114,7 @@ contract TWAMM is BaseHook, ITWAMM {
     }
 
     function getOrder(PoolKey calldata poolKey, OrderKey calldata orderKey) external view returns (Order memory) {
-        return _getOrder(twammStates[poolKey.toId()], orderKey);
+        return _getOrder(twammStates[poolKey.toId()], _orderId(orderKey));
     }
 
     function getOrderPool(PoolKey calldata key, bool zeroForOne)
@@ -203,11 +203,13 @@ contract TWAMM is BaseHook, ITWAMM {
 
         emit SubmitOrder(
             poolId,
+            orderId,
             orderKey.owner,
+            amountIn,
             orderKey.expiration,
             orderKey.zeroForOne,
             sellRate,
-            _getOrder(twamm, orderKey).earningsFactorLast
+            _getOrder(twamm, orderId).earningsFactorLast
         );
     }
 
@@ -247,9 +249,8 @@ contract TWAMM is BaseHook, ITWAMM {
     {
         // Calls executeTWAMMOrders
         sync(key, orderKey, false);
-
-        tokens0Claimed = _claimTokens(key.currency0);
-        tokens1Claimed = _claimTokens(key.currency1);
+        
+        (tokens0Claimed, tokens1Claimed) = (_claimTokens(key));
     }
 
     /// @inheritdoc ITWAMM
@@ -259,7 +260,7 @@ contract TWAMM is BaseHook, ITWAMM {
     {
         executeTWAMMOrders(key);
 
-        (uint256 buyTokensOwed, uint256 sellTokensOwed, uint256 newEarningsFactorLast) =
+        (uint256 buyTokensOwed, uint256 sellTokensOwed, uint256 newEarningsFactorLast, bytes32 orderId) =
             _sync(key, orderKey, removeRemaining);
 
         if (orderKey.zeroForOne) {
@@ -273,16 +274,19 @@ contract TWAMM is BaseHook, ITWAMM {
         tokensOwed[key.currency0][orderKey.owner] += tokens0OwedDelta;
         tokensOwed[key.currency1][orderKey.owner] += tokens1OwedDelta;
 
-        emit SyncOrder(key.toId(), orderKey.owner, tokens0OwedDelta, tokens1OwedDelta, newEarningsFactorLast);
+        emit SyncOrder(key.toId(), orderId, removeRemaining, tokens0OwedDelta, tokens1OwedDelta, newEarningsFactorLast);
     }
 
     function _sync(PoolKey memory key, OrderKey memory orderKey, bool removeRemaining)
         internal
-        returns (uint256 buyTokensOwed, uint256 sellTokensOwed, uint256 earningsFactorLast)
+        returns (uint256 buyTokensOwed, uint256 sellTokensOwed, uint256 earningsFactorLast, bytes32 orderId)
     {
         PoolId poolId = key.toId();
         TWAMMState storage twamm = twammStates[poolId];
-        Order storage order = _getOrder(twamm, orderKey);
+
+        orderId = _orderId(orderKey);
+        
+        Order storage order = _getOrder(twamm, orderId);
 
         OrderPool.State storage orderPool = orderKey.zeroForOne ? twamm.orderPool0For1 : twamm.orderPool1For0;
         bool isOrderExpired = orderKey.expiration <= block.timestamp;
@@ -299,7 +303,7 @@ contract TWAMM is BaseHook, ITWAMM {
         buyTokensOwed = ((earningsFactorLast - order.earningsFactorLast) * order.sellRate) >> FixedPoint96.RESOLUTION;
 
         if (isOrderExpired) {
-            delete twamm.orders[_orderId(orderKey)];
+            delete twamm.orders[orderId];
         } else {
             order.earningsFactorLast = earningsFactorLast;
         }
@@ -308,11 +312,23 @@ contract TWAMM is BaseHook, ITWAMM {
             uint256 durationDelta = orderKey.expiration - _getIntervalTime(block.timestamp);
             sellTokensOwed = order.sellRate * durationDelta;
 
-            delete twamm.orders[_orderId(orderKey)];
-        }
+            delete twamm.orders[orderId]; 
+        } 
     }
 
-    function _claimTokens(Currency token) internal returns (uint256 amountTransferred) {
+    function _claimTokens(PoolKey memory key) internal returns (uint256 tokens0Claimed, uint256 tokens1Claimed) {
+        (tokens0Claimed, tokens1Claimed) = (_claimToken(key.currency0), _claimToken(key.currency1));
+
+        emit ClaimTokens(
+            key.toId(),
+            msg.sender,
+            tokens0Claimed,
+            tokens1Claimed
+        );
+    }
+
+
+    function _claimToken(Currency token) internal returns (uint256 amountTransferred) {
         uint256 currentBalance = token.balanceOfSelf();
         amountTransferred = tokensOwed[token][msg.sender];
 
@@ -327,8 +343,7 @@ contract TWAMM is BaseHook, ITWAMM {
 
     /// @inheritdoc ITWAMM
     function claimTokens(PoolKey calldata key) external returns (uint256 tokens0Claimed, uint256 tokens1Claimed) {
-        tokens0Claimed = _claimTokens(key.currency0);
-        tokens1Claimed = _claimTokens(key.currency1);
+        (tokens0Claimed, tokens1Claimed) = _claimTokens(key);
     }
 
     function _unlockCallback(bytes calldata rawData) internal override returns (bytes memory) {
@@ -699,8 +714,8 @@ contract TWAMM is BaseHook, ITWAMM {
         }
     }
 
-    function _getOrder(TWAMMState storage self, OrderKey memory key) internal view returns (Order storage) {
-        return self.orders[_orderId(key)];
+    function _getOrder(TWAMMState storage self, bytes32 orderId) internal view returns (Order storage) {
+        return self.orders[orderId];
     }
 
     function _orderId(OrderKey memory key) internal pure returns (bytes32) {

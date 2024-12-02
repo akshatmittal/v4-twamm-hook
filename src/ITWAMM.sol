@@ -71,6 +71,7 @@ interface ITWAMM {
 
     /// @notice Emitted when a new long term order is submitted
     /// @param poolId The id of the corresponding pool
+    /// @param orderId The unique identifier of the order, derived as `keccak256` hash of the `OrderKey`
     /// @param owner The owner of the new order
     /// @param expiration The expiration timestamp of the order
     /// @param zeroForOne Whether the order is selling token 0 for token 1
@@ -78,22 +79,38 @@ interface ITWAMM {
     /// @param earningsFactorLast The current earningsFactor of the order pool
     event SubmitOrder(
         PoolId indexed poolId,
+        bytes32 indexed orderId,
         address indexed owner,
+        uint256 amountIn,
         uint160 expiration,
         bool zeroForOne,
         uint256 sellRate,
         uint256 earningsFactorLast
     );
 
+    /// @notice Emitted when tokens are claimed from the TWAMM
+    /// @param poolId The id of the corresponding pool
+    /// @param owner The owner claiming tokens
+    /// @param amount0 The amount of token0 claimed
+    /// @param amount1 The amount of token1 claimed
+    event ClaimTokens(
+        PoolId indexed poolId,
+        address indexed owner,
+        uint256 amount0,
+        uint256 amount1
+    );
+
     /// @notice Emitted when an order is synced
     /// @param poolId The id of the corresponding pool
-    /// @param owner The owner of the existing order
+    /// @param orderId The unique identifier of the order, derived as `keccak256` hash of the `OrderKey`
+    /// @param removeRemaining Indicates whether the remaining order should be canceled at the current interval
     /// @param tokens0OwedDelta Change in owed tokens0
     /// @param tokens1OwedDelta Change in owed tokens1
     /// @param earningsFactorLast The current earningsFactor of the order pool
     event SyncOrder(
         PoolId indexed poolId,
-        address indexed owner,
+        bytes32 indexed orderId,
+        bool removeRemaining,
         uint256 tokens0OwedDelta,
         uint256 tokens1OwedDelta,
         uint256 earningsFactorLast
