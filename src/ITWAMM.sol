@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.15;
 
+import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {IERC20Minimal} from "@uniswap/v4-core/src/interfaces/external/IERC20Minimal.sol";
 import {Currency, CurrencyLibrary} from "@uniswap/v4-core/src/types/Currency.sol";
@@ -117,14 +118,24 @@ interface ITWAMM {
         uint256 earningsFactorLast
     );
 
-     /**
-     * @notice Emitted when an order is fulfilled within a specific pool.
-     * @param poolId The id of the corresponding pool
-     * @param swapParams The parameters of the swap executed to fulfill the order.
-     */
+
+   
+    /// @notice Emitted when an order is fulfilled within a specific pool.
+    /// @dev This event provides detailed information about the state of the pool
+    ///      and the rates before and after the swap is completed.
+    /// @param poolId The id of the corresponding pool where the order was fulfilled.
+    /// @param balanceDelta The net change in balances after the swap.
+    /// @param sellRateStart0for1 The initial rate for token0 to token1 at the start of the execute.
+    /// @param sellRateStart1for0 The initial rate for token1 to token0 at the start of the execute.
+    /// @param sellRateEnd0for1 The final rate for token0 to token1 at the end of the execute.
+    /// @param sellRateEnd1for0 The final rate for token1 to token0 at the end of the execute.
     event Fulfilment(
         PoolId indexed poolId,
-        IPoolManager.SwapParams swapParams
+        BalanceDelta balanceDelta,
+        uint256 sellRateStart0for1,
+        uint256 sellRateStart1for0,
+        uint256 sellRateEnd0for1,
+        uint256 sellRateEnd1for0
     );
 
     /// @notice Submits a new long term order into the TWAMM. Also executes TWAMM orders if not up to date.

@@ -42,6 +42,7 @@ contract TWAMM is BaseHook, ITWAMM {
     using TransientStateLibrary for IPoolManager;
 
     bytes internal constant ZERO_BYTES = bytes("");
+    bytes32 internal constant SWAP_RESULT = 0x5d03e53663c1f13b1b063208a69d1905cec748a3d0dfe247a98bbb33dca35e7a;
 
     /// @notice Time interval on which orders are allowed to expire. Conserves processing needed on execute.
     uint256 public immutable expirationInterval;
@@ -142,6 +143,8 @@ contract TWAMM is BaseHook, ITWAMM {
         PoolId poolId = key.toId();
         (uint160 sqrtPriceX96,,,) = poolManager.getSlot0(poolId);
         TWAMMState storage twamm = twammStates[poolId];
+        uint256 sellRateStart0for1 = twamm.orderPool0For1.sellRateCurrent;
+        uint256 sellRateStart1for0 = twamm.orderPool1For0.sellRateCurrent;
 
         if (twamm.lastVirtualOrderTimestamp == 0) {
             revert NotInitialized();
@@ -166,8 +169,19 @@ contract TWAMM is BaseHook, ITWAMM {
                     abi.encode(key, swapParams)
                 );
             }
+            BalanceDelta delta;
+            assembly ("memory-safe") {
+                delta := tload(SWAP_RESULT)
+            }
 
-            emit Fulfilment(poolId, swapParams);
+            emit Fulfilment(
+                poolId,
+                delta,
+                sellRateStart0for1,
+                sellRateStart1for0,
+                twamm.orderPool0For1.sellRateCurrent,
+                twamm.orderPool0For1.sellRateCurrent
+            );
         }
     }
 
@@ -360,6 +374,10 @@ contract TWAMM is BaseHook, ITWAMM {
         // @audit This delta is important here since poolManager can be unlocked outside of the hook.
         BalanceDelta delta = poolManager.swap(key, swapParams, ZERO_BYTES);
 
+        assembly ("memory-safe") {
+            tstore(SWAP_RESULT, delta)
+        }
+        
         if (swapParams.zeroForOne) {
             if (delta.amount0() < 0) {
                 key.currency0.settle(poolManager, address(this), uint256(uint128(-delta.amount0())), false);
