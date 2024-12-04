@@ -143,8 +143,6 @@ contract TWAMM is BaseHook, ITWAMM {
         PoolId poolId = key.toId();
         (uint160 sqrtPriceX96,,,) = poolManager.getSlot0(poolId);
         TWAMMState storage twamm = twammStates[poolId];
-        uint256 sellRateStart0for1 = twamm.orderPool0For1.sellRateCurrent;
-        uint256 sellRateStart1for0 = twamm.orderPool1For0.sellRateCurrent;
 
         if (twamm.lastVirtualOrderTimestamp == 0) {
             revert NotInitialized();
@@ -169,16 +167,9 @@ contract TWAMM is BaseHook, ITWAMM {
                     abi.encode(key, swapParams)
                 );
             }
-            BalanceDelta delta;
-            assembly ("memory-safe") {
-                delta := tload(SWAP_RESULT)
-            }
-
+    
             emit Fulfilment(
                 poolId,
-                delta,
-                sellRateStart0for1,
-                sellRateStart1for0,
                 twamm.orderPool0For1.sellRateCurrent,
                 twamm.orderPool0For1.sellRateCurrent
             );
@@ -265,7 +256,8 @@ contract TWAMM is BaseHook, ITWAMM {
         // Calls executeTWAMMOrders
         sync(key, orderKey, false);
         
-        (tokens0Claimed, tokens1Claimed) = (_claimTokens(key));
+        tokens0Claimed = _claimTokens(key.currency0);
+        tokens1Claimed = _claimTokens(key.currency1);
     }
 
     /// @inheritdoc ITWAMM
@@ -331,19 +323,7 @@ contract TWAMM is BaseHook, ITWAMM {
         } 
     }
 
-    function _claimTokens(PoolKey memory key) internal returns (uint256 tokens0Claimed, uint256 tokens1Claimed) {
-        (tokens0Claimed, tokens1Claimed) = (_claimToken(key.currency0), _claimToken(key.currency1));
-
-        emit ClaimTokens(
-            key.toId(),
-            msg.sender,
-            tokens0Claimed,
-            tokens1Claimed
-        );
-    }
-
-
-    function _claimToken(Currency token) internal returns (uint256 amountTransferred) {
+    function _claimTokens(Currency token) internal returns (uint256 amountTransferred) {
         uint256 currentBalance = token.balanceOfSelf();
         amountTransferred = tokensOwed[token][msg.sender];
 
@@ -354,11 +334,14 @@ contract TWAMM is BaseHook, ITWAMM {
         tokensOwed[token][msg.sender] -= amountTransferred; // @audit Should set this to 0 maybe?
 
         IERC20Minimal(Currency.unwrap(token)).safeTransfer(msg.sender, amountTransferred);
+
+        emit ClaimTokens(token, msg.sender, amountTransferred);
     }
 
     /// @inheritdoc ITWAMM
     function claimTokens(PoolKey calldata key) external returns (uint256 tokens0Claimed, uint256 tokens1Claimed) {
-        (tokens0Claimed, tokens1Claimed) = _claimTokens(key);
+        tokens0Claimed = _claimTokens(key.currency0);
+        tokens1Claimed = _claimTokens(key.currency1);
     }
 
     function _unlockCallback(bytes calldata rawData) internal override returns (bytes memory) {
@@ -374,10 +357,6 @@ contract TWAMM is BaseHook, ITWAMM {
         // @audit This delta is important here since poolManager can be unlocked outside of the hook.
         BalanceDelta delta = poolManager.swap(key, swapParams, ZERO_BYTES);
 
-        assembly ("memory-safe") {
-            tstore(SWAP_RESULT, delta)
-        }
-        
         if (swapParams.zeroForOne) {
             if (delta.amount0() < 0) {
                 key.currency0.settle(poolManager, address(this), uint256(uint128(-delta.amount0())), false);
@@ -393,6 +372,8 @@ contract TWAMM is BaseHook, ITWAMM {
                 key.currency0.take(poolManager, address(this), uint256(uint128(delta.amount0())), false);
             }
         }
+
+        emit ProccessSwap(key.toId(), delta);
     }
 
     function _getTWAMM(PoolKey memory key) internal view returns (TWAMMState storage) {

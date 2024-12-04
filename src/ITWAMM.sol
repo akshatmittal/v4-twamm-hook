@@ -91,15 +91,13 @@ interface ITWAMM {
     );
 
     /// @notice Emitted when tokens are claimed from the TWAMM
-    /// @param poolId The id of the corresponding pool
+    /// @param token The claimed token
     /// @param owner The owner claiming tokens
-    /// @param amount0 The amount of token0 claimed
-    /// @param amount1 The amount of token1 claimed
+    /// @param amount The amount of token claimed
     event ClaimTokens(
-        PoolId indexed poolId,
+        Currency indexed token,
         address indexed owner,
-        uint256 amount0,
-        uint256 amount1
+        uint256 amount
     );
 
     /// @notice Emitted when an order is synced
@@ -118,24 +116,25 @@ interface ITWAMM {
         uint256 earningsFactorLast
     );
 
-
-   
     /// @notice Emitted when an order is fulfilled within a specific pool.
     /// @dev This event provides detailed information about the state of the pool
     ///      and the rates before and after the swap is completed.
     /// @param poolId The id of the corresponding pool where the order was fulfilled.
-    /// @param balanceDelta The net change in balances after the swap.
-    /// @param sellRateStart0for1 The initial rate for token0 to token1 at the start of the execute.
-    /// @param sellRateStart1for0 The initial rate for token1 to token0 at the start of the execute.
-    /// @param sellRateEnd0for1 The final rate for token0 to token1 at the end of the execute.
-    /// @param sellRateEnd1for0 The final rate for token1 to token0 at the end of the execute.
+    /// @param sellRate0for1 The final rate for token0 to token1 at the end of the execute.
+    /// @param sellRate1for0 The final rate for token1 to token0 at the end of the execute.
     event Fulfilment(
         PoolId indexed poolId,
-        BalanceDelta balanceDelta,
-        uint256 sellRateStart0for1,
-        uint256 sellRateStart1for0,
-        uint256 sellRateEnd0for1,
-        uint256 sellRateEnd1for0
+        uint256 sellRate0for1,
+        uint256 sellRate1for0
+    );
+
+    /// @notice Emitted when a swap is successfully processed.
+    /// @dev Contains details about the resulting balance changes.
+    /// @param poolId The id of the corresponding pool where the swap occurred.
+    /// @param delta The balance changes resulting from the swap
+    event ProccessSwap(
+        PoolId indexed poolId,
+        BalanceDelta delta
     );
 
     /// @notice Submits a new long term order into the TWAMM. Also executes TWAMM orders if not up to date.
