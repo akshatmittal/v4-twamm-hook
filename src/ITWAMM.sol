@@ -75,6 +75,7 @@ interface ITWAMM {
     /// @param poolId The id of the corresponding pool
     /// @param orderId The unique identifier of the order, derived as `keccak256` hash of the `OrderKey`
     /// @param owner The owner of the new order
+    /// @param amountIn The amount for the order
     /// @param expiration The expiration timestamp of the order
     /// @param zeroForOne Whether the order is selling token 0 for token 1
     /// @param sellRate The sell rate of tokens per second being sold in the order
@@ -94,11 +95,7 @@ interface ITWAMM {
     /// @param token The claimed token
     /// @param owner The owner claiming tokens
     /// @param amount The amount of token claimed
-    event ClaimTokens(
-        Currency indexed token,
-        address indexed owner,
-        uint256 amount
-    );
+    event ClaimTokens(Currency indexed token, address indexed owner, uint256 amount);
 
     /// @notice Emitted when an order is synced
     /// @param poolId The id of the corresponding pool
@@ -117,25 +114,18 @@ interface ITWAMM {
     );
 
     /// @notice Emitted when an order is fulfilled within a specific pool.
-    /// @dev This event provides detailed information about the state of the pool
-    ///      and the rates before and after the swap is completed.
+    /// @dev This event provides detailed information about the state of the pool and the rates before
+    //       and after the swap is completed.
     /// @param poolId The id of the corresponding pool where the order was fulfilled.
     /// @param sellRate0for1 The final rate for token0 to token1 at the end of the execute.
     /// @param sellRate1for0 The final rate for token1 to token0 at the end of the execute.
-    event Fulfilment(
-        PoolId indexed poolId,
-        uint256 sellRate0for1,
-        uint256 sellRate1for0
-    );
+    event Fulfillment(PoolId indexed poolId, uint256 sellRate0for1, uint256 sellRate1for0);
 
     /// @notice Emitted when a swap is successfully processed.
     /// @dev Contains details about the resulting balance changes.
     /// @param poolId The id of the corresponding pool where the swap occurred.
     /// @param delta The balance changes resulting from the swap
-    event ProccessSwap(
-        PoolId indexed poolId,
-        BalanceDelta delta
-    );
+    event SwapExecuted(PoolId indexed poolId, BalanceDelta delta);
 
     /// @notice Submits a new long term order into the TWAMM. Also executes TWAMM orders if not up to date.
     /// @param key The PoolKey for which to identify the amm pool of the order

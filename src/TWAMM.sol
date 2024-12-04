@@ -42,7 +42,6 @@ contract TWAMM is BaseHook, ITWAMM {
     using TransientStateLibrary for IPoolManager;
 
     bytes internal constant ZERO_BYTES = bytes("");
-    bytes32 internal constant SWAP_RESULT = 0x5d03e53663c1f13b1b063208a69d1905cec748a3d0dfe247a98bbb33dca35e7a;
 
     /// @notice Time interval on which orders are allowed to expire. Conserves processing needed on execute.
     uint256 public immutable expirationInterval;
@@ -159,20 +158,16 @@ contract TWAMM is BaseHook, ITWAMM {
             console2.log("maxToSwap", maxToSwap);
             console2.log("zeroForOne", zeroForOne);
 
-            IPoolManager.SwapParams memory swapParams = IPoolManager.SwapParams(zeroForOne, -maxToSwap.toInt256(), sqrtPriceLimitX96); // @audit Is this fully safe?
+            IPoolManager.SwapParams memory swapParams =
+                IPoolManager.SwapParams(zeroForOne, -maxToSwap.toInt256(), sqrtPriceLimitX96);
+
             if (poolManager.isUnlocked()) {
-                _processSwap(key, swapParams);
+                _processSwap(key, swapParams); // @audit Is this fully safe?
             } else {
-                poolManager.unlock(
-                    abi.encode(key, swapParams)
-                );
+                poolManager.unlock(abi.encode(key, swapParams));
             }
-    
-            emit Fulfilment(
-                poolId,
-                twamm.orderPool0For1.sellRateCurrent,
-                twamm.orderPool0For1.sellRateCurrent
-            );
+
+            emit Fulfillment(poolId, twamm.orderPool0For1.sellRateCurrent, twamm.orderPool0For1.sellRateCurrent);
         }
     }
 
@@ -255,7 +250,7 @@ contract TWAMM is BaseHook, ITWAMM {
     {
         // Calls executeTWAMMOrders
         sync(key, orderKey, false);
-        
+
         tokens0Claimed = _claimTokens(key.currency0);
         tokens1Claimed = _claimTokens(key.currency1);
     }
@@ -290,9 +285,7 @@ contract TWAMM is BaseHook, ITWAMM {
     {
         PoolId poolId = key.toId();
         TWAMMState storage twamm = twammStates[poolId];
-
         orderId = _orderId(orderKey);
-
         Order storage order = _getOrder(twamm, orderId);
 
         OrderPool.State storage orderPool = orderKey.zeroForOne ? twamm.orderPool0For1 : twamm.orderPool1For0;
@@ -319,8 +312,8 @@ contract TWAMM is BaseHook, ITWAMM {
             uint256 durationDelta = orderKey.expiration - _getIntervalTime(block.timestamp);
             sellTokensOwed = order.sellRate * durationDelta;
 
-            delete twamm.orders[orderId]; 
-        } 
+            delete twamm.orders[orderId];
+        }
     }
 
     function _claimTokens(Currency token) internal returns (uint256 amountTransferred) {
@@ -373,7 +366,7 @@ contract TWAMM is BaseHook, ITWAMM {
             }
         }
 
-        emit ProccessSwap(key.toId(), delta);
+        emit SwapExecuted(key.toId(), delta);
     }
 
     function _getTWAMM(PoolKey memory key) internal view returns (TWAMMState storage) {
