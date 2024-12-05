@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.15;
 
+import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {IERC20Minimal} from "@uniswap/v4-core/src/interfaces/external/IERC20Minimal.sol";
 import {Currency, CurrencyLibrary} from "@uniswap/v4-core/src/types/Currency.sol";
@@ -72,33 +73,59 @@ interface ITWAMM {
 
     /// @notice Emitted when a new long term order is submitted
     /// @param poolId The id of the corresponding pool
+    /// @param orderId The unique identifier of the order, derived as `keccak256` hash of the `OrderKey`
     /// @param owner The owner of the new order
+    /// @param amountIn The amount for the order
     /// @param expiration The expiration timestamp of the order
     /// @param zeroForOne Whether the order is selling token 0 for token 1
     /// @param sellRate The sell rate of tokens per second being sold in the order
     /// @param earningsFactorLast The current earningsFactor of the order pool
     event SubmitOrder(
         PoolId indexed poolId,
+        bytes32 indexed orderId,
         address indexed owner,
+        uint256 amountIn,
         uint160 expiration,
         bool zeroForOne,
         uint256 sellRate,
         uint256 earningsFactorLast
     );
 
+    /// @notice Emitted when tokens are claimed from the TWAMM
+    /// @param token The claimed token
+    /// @param owner The owner claiming tokens
+    /// @param amount The amount of token claimed
+    event ClaimTokens(Currency indexed token, address indexed owner, uint256 amount);
+
     /// @notice Emitted when an order is synced
     /// @param poolId The id of the corresponding pool
-    /// @param owner The owner of the existing order
+    /// @param orderId The unique identifier of the order, derived as `keccak256` hash of the `OrderKey`
+    /// @param removeRemaining Indicates whether the remaining order should be canceled at the current interval
     /// @param tokens0OwedDelta Change in owed tokens0
     /// @param tokens1OwedDelta Change in owed tokens1
     /// @param earningsFactorLast The current earningsFactor of the order pool
     event SyncOrder(
         PoolId indexed poolId,
-        address indexed owner,
+        bytes32 indexed orderId,
+        bool removeRemaining,
         uint256 tokens0OwedDelta,
         uint256 tokens1OwedDelta,
         uint256 earningsFactorLast
     );
+
+    /// @notice Emitted when an order is fulfilled within a specific pool.
+    /// @dev This event provides detailed information about the state of the pool and the rates before
+    //       and after the swap is completed.
+    /// @param poolId The id of the corresponding pool where the order was fulfilled.
+    /// @param sellRate0for1 The final rate for token0 to token1 at the end of the execute.
+    /// @param sellRate1for0 The final rate for token1 to token0 at the end of the execute.
+    event Fulfillment(PoolId indexed poolId, uint256 sellRate0for1, uint256 sellRate1for0);
+
+    /// @notice Emitted when a swap is successfully processed.
+    /// @dev Contains details about the resulting balance changes.
+    /// @param poolId The id of the corresponding pool where the swap occurred.
+    /// @param delta The balance changes resulting from the swap
+    event SwapExecuted(PoolId indexed poolId, BalanceDelta delta);
 
     /// @notice Submits a new long term order into the TWAMM. Also executes TWAMM orders if not up to date.
     /// @param key The PoolKey for which to identify the amm pool of the order
