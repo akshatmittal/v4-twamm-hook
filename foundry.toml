@@ -1,8 +1,9 @@
 [profile.default]
+bytecode_hash = "none"
 evm_version = "cancun"
 ffi = true
 libs = ["lib"]
-optimizer = false
+optimizer = true
 out = "out"
 solc_version = "0.8.26"
 src = "src"

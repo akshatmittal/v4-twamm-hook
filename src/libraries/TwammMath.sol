@@ -42,7 +42,7 @@ library TwammMath {
         uint256 sellRateCurrent1;
     }
 
-    function getNewSqrtPriceX96(ExecutionUpdateParams memory params) internal pure returns (uint160 newSqrtPriceX96) {
+    function getNewSqrtPriceX96(ExecutionUpdateParams memory params) external pure returns (uint160 newSqrtPriceX96) {
         bytes16 sellRateBytes0 = params.sellRateCurrent0.fromUInt();
         bytes16 sellRateBytes1 = params.sellRateCurrent1.fromUInt();
         bytes16 sqrtSellRateBytes = sellRateBytes0.mul(sellRateBytes1).sqrt();
@@ -66,7 +66,7 @@ library TwammMath {
     }
 
     function getSqrtPriceWithinBounds(bool zeroForOne, bytes16 desiredPriceX96)
-        internal
+        public
         pure
         returns (bytes16 newSqrtPriceX96)
     {
@@ -78,7 +78,7 @@ library TwammMath {
     }
 
     function calculateEarningsUpdates(ExecutionUpdateParams memory params, uint160 finalSqrtPriceX96)
-        internal
+        external
         pure
         returns (uint256 earningsFactorPool0, uint256 earningsFactorPool1)
     {
@@ -119,7 +119,7 @@ library TwammMath {
         uint160 sqrtPriceEndX96,
         uint256 sellRate0,
         uint256 sellRate1
-    ) internal pure returns (uint256 secondsBetween) {
+    ) external pure returns (uint256 secondsBetween) {
         bytes16 sellRate0Bytes = sellRate0.fromUInt();
         bytes16 sellRate1Bytes = sellRate1.fromUInt();
         bytes16 sqrtPriceStartX96Bytes = sqrtPriceStartX96.fromUInt();
