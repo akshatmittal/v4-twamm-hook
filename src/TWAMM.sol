@@ -11,6 +11,8 @@ import {SafeCast} from "@uniswap/v4-core/src/libraries/SafeCast.sol";
 import {IERC20Minimal} from "@uniswap/v4-core/src/interfaces/external/IERC20Minimal.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
+import {LPFeeLibrary} from "@uniswap/v4-core/src/libraries/LPFeeLibrary.sol";
+import {SwapMath} from "@uniswap/v4-core/src/libraries/SwapMath.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
@@ -18,6 +20,7 @@ import {CurrencySettler} from "@uniswap/v4-core/test/utils/CurrencySettler.sol";
 import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
 import {TransientStateLibrary} from "@uniswap/v4-core/src/libraries/TransientStateLibrary.sol";
 import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "@uniswap/v4-core/src/types/BeforeSwapDelta.sol";
+import {LiquidityMath} from "@uniswap/v4-core/src/libraries/LiquidityMath.sol";
 
 import {ITWAMM} from "@src/ITWAMM.sol";
 
@@ -140,15 +143,23 @@ contract TWAMM is BaseHook, ITWAMM {
 
     function executeTWAMMOrders(PoolKey memory key, uint256 targetTimestamp) public {
         PoolId poolId = key.toId();
-        (uint160 sqrtPriceX96,,,) = poolManager.getSlot0(poolId);
         TWAMMState storage twamm = twammStates[poolId];
 
         if (twamm.lastVirtualOrderTimestamp == 0) {
             revert NotInitialized();
         }
 
+        (uint160 sqrtPriceX96,, uint24 protocolFee, uint24 lpFee) = poolManager.getSlot0(poolId);
         (bool zeroForOne, uint160 sqrtPriceLimitX96, int256 maxSwapAmount) = _executeTWAMMOrders(
-            twamm, key, PoolParamsOnExecute(sqrtPriceX96, poolManager.getLiquidity(poolId), 0), targetTimestamp
+            twamm,
+            key,
+            PoolParamsOnExecute(
+                sqrtPriceX96,
+                protocolFee + lpFee, // Always under MAX_FEE by design
+                poolManager.getLiquidity(poolId),
+                0
+            ),
+            targetTimestamp
         );
 
         if (sqrtPriceLimitX96 != 0 && sqrtPriceLimitX96 != sqrtPriceX96 && maxSwapAmount != 0) {
@@ -161,11 +172,13 @@ contract TWAMM is BaseHook, ITWAMM {
             IPoolManager.SwapParams memory swapParams =
                 IPoolManager.SwapParams(zeroForOne, -maxToSwap.toInt256(), sqrtPriceLimitX96);
 
+            // poolManager.updateDynamicLPFee(key, 0);
             if (poolManager.isUnlocked()) {
                 _processSwap(key, swapParams); // @audit Is this fully safe?
             } else {
                 poolManager.unlock(abi.encode(key, swapParams));
             }
+            // poolManager.updateDynamicLPFee(key, 3000);
 
             emit Fulfillment(poolId, twamm.orderPool0For1.sellRateCurrent, twamm.orderPool0For1.sellRateCurrent);
         }
@@ -302,6 +315,12 @@ contract TWAMM is BaseHook, ITWAMM {
             isOrderExpired ? orderPool.earningsFactorAtInterval[orderKey.expiration] : orderPool.earningsFactorCurrent;
         buyTokensOwed = ((earningsFactorLast - order.earningsFactorLast) * order.sellRate) >> FixedPoint96.RESOLUTION;
 
+        if (orderKey.zeroForOne) {
+            console2.log("buyTokensOwed1", buyTokensOwed);
+        } else {
+            console2.log("buyTokensOwed0", buyTokensOwed);
+        }
+
         if (isOrderExpired) {
             delete twamm.orders[orderId];
         } else {
@@ -375,6 +394,7 @@ contract TWAMM is BaseHook, ITWAMM {
 
     struct PoolParamsOnExecute {
         uint160 sqrtPriceX96;
+        uint24 totalFee;
         uint128 liquidity;
         int256 maxSwapAmount;
     }
@@ -495,6 +515,7 @@ contract TWAMM is BaseHook, ITWAMM {
         private
         returns (PoolParamsOnExecute memory)
     {
+        uint160 initialSqrtPriceX96 = params.pool.sqrtPriceX96;
         uint256 secondsElapsedX96 = params.secondsElapsed * FixedPoint96.Q96;
         uint160 finalSqrtPriceX96;
 
@@ -515,18 +536,18 @@ contract TWAMM is BaseHook, ITWAMM {
             unchecked {
                 if (crossingInitializedTick) {
                     uint256 secondsUntilCrossingX96;
-                    (params.pool, secondsUntilCrossingX96) = _advanceTimeThroughTickCrossing(
-                        self, poolKey, TickCrossingParams(tick, params.nextTimestamp, secondsElapsedX96, params.pool)
-                    );
+                    (params.pool, secondsUntilCrossingX96) =
+                        _advanceTimeThroughTickCrossing(self, poolKey, TickCrossingParams(tick, params.pool));
                     secondsElapsedX96 = secondsElapsedX96 - secondsUntilCrossingX96;
                 } else {
                     (uint256 earningsFactorPool0, uint256 earningsFactorPool1) =
                         TwammMath.calculateEarningsUpdates(executionParams, finalSqrtPriceX96);
 
-                    int256 sellRateDelta =
-                        -self.orderPool0For1.sellRateCurrent.toInt256() + self.orderPool1For0.sellRateCurrent.toInt256();
+                    uint256 sellRateActive = (initialSqrtPriceX96 > finalSqrtPriceX96)
+                        ? (self.orderPool0For1.sellRateCurrent)
+                        : (self.orderPool1For0.sellRateCurrent);
 
-                    params.pool.maxSwapAmount += params.secondsElapsed.toInt256() * sellRateDelta;
+                    params.pool.maxSwapAmount += params.secondsElapsed.toInt256() * sellRateActive.toInt256();
 
                     if (params.nextTimestamp % params.expirationInterval == 0) {
                         self.orderPool0For1.advanceToInterval(params.nextTimestamp, earningsFactorPool0);
@@ -562,7 +583,8 @@ contract TWAMM is BaseHook, ITWAMM {
     ) private returns (PoolParamsOnExecute memory) {
         OrderPool.State storage orderPool = params.zeroForOne ? self.orderPool0For1 : self.orderPool1For0;
         uint256 sellRateCurrent = orderPool.sellRateCurrent;
-        uint256 amountSelling = sellRateCurrent * params.secondsElapsed;
+        uint256 amountSelling = sellRateCurrent * params.secondsElapsed * (SwapMath.MAX_SWAP_FEE - params.pool.totalFee)
+            / SwapMath.MAX_SWAP_FEE;
         uint256 totalEarnings;
 
         while (true) {
@@ -585,9 +607,10 @@ contract TWAMM is BaseHook, ITWAMM {
                 );
 
                 params.pool.sqrtPriceX96 = initializedSqrtPrice;
-                params.pool.liquidity = params.zeroForOne
-                    ? params.pool.liquidity - uint128(liquidityNetAtTick)
-                    : params.pool.liquidity + uint128(-liquidityNetAtTick);
+                if (params.zeroForOne) {
+                    liquidityNetAtTick = -liquidityNetAtTick;
+                }
+                params.pool.liquidity = LiquidityMath.addDelta(params.pool.liquidity, liquidityNetAtTick);
 
                 unchecked {
                     totalEarnings += params.zeroForOne ? swapDelta1 : swapDelta0;
@@ -625,8 +648,6 @@ contract TWAMM is BaseHook, ITWAMM {
 
     struct TickCrossingParams {
         int24 initializedTick;
-        uint256 nextTimestamp;
-        uint256 secondsElapsedX96;
         PoolParamsOnExecute pool;
     }
 

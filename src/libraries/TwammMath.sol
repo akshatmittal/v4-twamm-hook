@@ -6,6 +6,7 @@ import {SafeCast} from "@uniswap/v4-core/src/libraries/SafeCast.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 
 import {ABDKMathQuad} from "./ABDKMathQuad.sol";
+import {console2} from "forge-std/console2.sol";
 
 /// @title TWAMM Math - Pure functions for TWAMM math calculations
 library TwammMath {
@@ -32,6 +33,7 @@ library TwammMath {
         bytes16 secondsElapsed;
         bytes16 sqrtPrice;
         bytes16 liquidity;
+        bytes16 appliedFees;
     }
 
     struct ExecutionUpdateParams {
@@ -46,19 +48,20 @@ library TwammMath {
         bytes16 sellRateBytes0 = params.sellRateCurrent0.fromUInt();
         bytes16 sellRateBytes1 = params.sellRateCurrent1.fromUInt();
         bytes16 sqrtSellRateBytes = sellRateBytes0.mul(sellRateBytes1).sqrt();
-        bytes16 sqrtSellRatioX96Bytes = sellRateBytes1.div(sellRateBytes0).sqrt().mul(Q96);
+        bytes16 sqrtSellRatioBytes = sellRateBytes1.div(sellRateBytes0).sqrt();
 
         PriceParamsBytes16 memory priceParams = PriceParamsBytes16({
-            sqrtSellRatio: sqrtSellRatioX96Bytes.div(Q96),
+            sqrtSellRatio: sqrtSellRatioBytes,
             sqrtSellRate: sqrtSellRateBytes,
             secondsElapsed: params.secondsElapsedX96.fromUInt().div(Q96),
             sqrtPrice: params.sqrtPriceX96.fromUInt().div(Q96),
-            liquidity: params.liquidity.fromUInt()
+            liquidity: params.liquidity.fromUInt(),
+            appliedFees: uint256(99_70).fromUInt().div(uint256(100_00).fromUInt())
         });
 
         bytes16 newSqrtPriceBytesX96 = calculateNewSqrtPrice(priceParams).mul(Q96);
         bool isOverflow = newSqrtPriceBytesX96.isInfinity() || newSqrtPriceBytesX96.isNaN();
-        bytes16 newSqrtPriceX96Bytes = isOverflow ? sqrtSellRatioX96Bytes : newSqrtPriceBytesX96;
+        bytes16 newSqrtPriceX96Bytes = isOverflow ? sqrtSellRatioBytes.mul(Q96) : newSqrtPriceBytesX96;
 
         newSqrtPriceX96 = getSqrtPriceWithinBounds(
             params.sellRateCurrent0 > params.sellRateCurrent1, newSqrtPriceX96Bytes
@@ -101,6 +104,9 @@ library TwammMath {
         // If liquidity is 0, it trades the twamm orders against each other for the time duration.
         earningsFactorPool0 = getEarningsFactorPool0(earningsFactorParams).mul(Q96).toUInt();
         earningsFactorPool1 = getEarningsFactorPool1(earningsFactorParams).mul(Q96).toUInt();
+
+        console2.log("ef0", earningsFactorPool0);
+        console2.log("ef1", earningsFactorPool1);
     }
 
     struct calculateTimeBetweenTicksParams {
@@ -153,6 +159,7 @@ library TwammMath {
     }
 
     function getEarningsFactorPool0(EarningsFactorParams memory params) private pure returns (bytes16 earningsFactor) {
+        // .mul(uint256(99_70).fromUInt()).div(uint256(100_00).fromUInt())
         bytes16 minuend = params.sellRatio.mul(params.secondsElapsed);
         bytes16 subtrahend = params.liquidity.mul(params.sellRatio.sqrt()).mul(
             params.newSqrtPrice.sub(params.prevSqrtPrice)

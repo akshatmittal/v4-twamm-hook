@@ -53,7 +53,7 @@ contract TWAMMFlowTest is Test, Fixtures {
         deployCodeTo("TWAMM.sol:TWAMM", constructorArgs, flags);
         twammHook = TWAMM(flags);
 
-        key = PoolKey(currency0, currency1, 3000, 60, twammHook);
+        key = PoolKey(currency0, currency1, 0, 60, twammHook);
         poolId = key.toId();
         manager.initialize(key, SQRT_PRICE_1_1, ZERO_BYTES);
 
@@ -189,6 +189,11 @@ contract TWAMMFlowTest is Test, Fixtures {
 
         console2.log(token0.balanceOf(address(twammHook)));
         console2.log(token1.balanceOf(address(twammHook)));
+
+        twammHook.sync(key, oKey1, false);
+        twammHook.sync(key, oKey2, false);
+
+        twammHook.claimTokens(key);
     }
 
     function testTWAMM_updatedOrder_CalculateTokensOwedAfterExpiration() public {
