@@ -103,19 +103,30 @@ contract TWAMMUnevenTest is Test, Fixtures {
 
         vm.warp(10_000);
         ITWAMM.OrderKey memory oKey1 = _submitOrderSingleDirection(true, 80 ether, orderDuration);
-        ITWAMM.OrderKey memory oKey2 = _submitOrderSingleDirection(false, 25 ether, orderDuration);
+        ITWAMM.OrderKey memory oKey2 = _submitOrderSingleDirection(false, 10 ether, orderDuration);
 
         console2.log("twammBalance0", token0.balanceOf(address(twammHook)));
         console2.log("twammBalance1", token1.balanceOf(address(twammHook)));
 
-        vm.warp(30_000);
+        vm.warp(10_000 + orderDuration);
+        console2.log("------");
         twammHook.executeTWAMMOrders(key);
+        console2.log("------");
 
         console2.log("twammBalance0", token0.balanceOf(address(twammHook)));
         console2.log("twammBalance1", token1.balanceOf(address(twammHook)));
 
         twammHook.sync(key, oKey1, false);
         twammHook.sync(key, oKey2, false);
+
+        console2.log("to0", twammHook.tokensOwed(currency0, address(this)));
+        console2.log("to1", twammHook.tokensOwed(currency1, address(this)));
+
+        (, uint256 ef0) = twammHook.getOrderPool(key, true);
+        (, uint256 ef1) = twammHook.getOrderPool(key, false);
+
+        console2.log("ef0", ef0);
+        console2.log("ef1", ef1);
     }
 
     function _submitOrderAs(address owner, bool zeroForOne, uint256 amount, uint160 duration)

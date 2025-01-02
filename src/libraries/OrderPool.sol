@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.15;
 
+import "forge-std/console2.sol";
+
 /// @title TWAMM OrderPool - Represents an OrderPool inside of a TWAMM
 library OrderPool {
     /// @notice Information related to a long term order pool.
@@ -14,6 +16,19 @@ library OrderPool {
         //
         uint256 earningsFactorCurrent;
         mapping(uint256 => uint256) earningsFactorAtInterval;
+    }
+
+    function advanceWithoutCommit(State storage self, uint256 expiration, uint256 earningsFactor, uint256 usedSellRate)
+        internal
+    {
+        console2.log("advanceWithoutCommit", earningsFactor);
+        unchecked {
+            self.earningsFactorCurrent += earningsFactor;
+            self.earningsFactorAtInterval[expiration] = self.earningsFactorCurrent;
+
+            self.sellRateEndingAtInterval[expiration] -= usedSellRate;
+            self.sellRateCurrent -= usedSellRate;
+        }
     }
 
     // Performs all updates on an OrderPool that must happen when hitting an expiration interval with expiring orders
