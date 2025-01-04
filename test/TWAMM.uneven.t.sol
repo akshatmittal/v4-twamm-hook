@@ -58,7 +58,7 @@ contract TWAMMUnevenTest is Test, Fixtures {
         // key = PoolKey(currency0, currency1, LPFeeLibrary.DYNAMIC_FEE_FLAG, 60, twammHook);
         key = PoolKey(currency0, currency1, 3000, 60, twammHook);
         poolId = key.toId();
-        manager.initialize(key, SQRT_PRICE_1_1, ZERO_BYTES);
+        manager.initialize(key, SQRT_PRICE_1_4, ZERO_BYTES);
 
         // This test assumes effectively unlimited liquidity
         posm.mint(
@@ -130,8 +130,8 @@ contract TWAMMUnevenTest is Test, Fixtures {
         console2.log("ef0", ef0);
         console2.log("ef1", ef1);
 
-        assertApproxEqRel(key.currency1.balanceOf(address(0xB1)), 76 ether, 0.01e18);
-        assertApproxEqRel(key.currency0.balanceOf(address(0xB2)), 10 ether, 0.01e18);
+        assertApproxEqRel(key.currency1.balanceOf(address(0xB1)), 20 ether, 0.02e18);
+        assertApproxEqRel(key.currency0.balanceOf(address(0xB2)), 40 ether, 0.02e18);
 
         console2.log("twammBalance0 %18e", token0.balanceOf(address(twammHook)));
         console2.log("twammBalance1 %18e", token1.balanceOf(address(twammHook)));
