@@ -25,7 +25,7 @@ import {LiquidityMath} from "@uniswap/v4-core/src/libraries/LiquidityMath.sol";
 import {ITWAMM} from "@src/ITWAMM.sol";
 
 import {PoolGetters} from "@lib/PoolGetters.sol";
-import {TwammMath} from "@lib/TwammMath.sol";
+// import {TwammMath} from "@lib/TwammMath.sol";
 import {OrderPool} from "@lib/OrderPool.sol";
 import {TransferHelper} from "@lib/TransferHelper.sol";
 
@@ -63,7 +63,7 @@ contract TWAMM is BaseHook, ITWAMM {
             beforeInitialize: true,
             afterInitialize: false,
             beforeAddLiquidity: true,
-            beforeRemoveLiquidity: false,
+            beforeRemoveLiquidity: true,
             afterAddLiquidity: false,
             afterRemoveLiquidity: false,
             beforeSwap: true,
@@ -103,6 +103,17 @@ contract TWAMM is BaseHook, ITWAMM {
         executeTWAMMOrders(key);
 
         return BaseHook.beforeAddLiquidity.selector;
+    }
+
+    function beforeRemoveLiquidity(
+        address,
+        PoolKey calldata key,
+        IPoolManager.ModifyLiquidityParams calldata,
+        bytes calldata
+    ) external override onlyPoolManager returns (bytes4) {
+        executeTWAMMOrders(key);
+
+        return BaseHook.beforeRemoveLiquidity.selector;
     }
 
     function beforeSwap(address, PoolKey calldata key, IPoolManager.SwapParams calldata, bytes calldata)
@@ -315,11 +326,15 @@ contract TWAMM is BaseHook, ITWAMM {
             isOrderExpired ? orderPool.earningsFactorAtInterval[orderKey.expiration] : orderPool.earningsFactorCurrent;
         buyTokensOwed = ((earningsFactorLast - order.earningsFactorLast) * order.sellRate) >> FixedPoint96.RESOLUTION;
 
-        if (orderKey.zeroForOne) {
-            console2.log("buyTokensOwed1", buyTokensOwed);
-        } else {
-            console2.log("buyTokensOwed0", buyTokensOwed);
-        }
+        // console2.log("order expiration", orderKey.expiration);
+        // console2.log("earningsFactorLast", earningsFactorLast);
+        // console2.log("orderEarningsFactorLast", order.earningsFactorLast);
+
+        // if (orderKey.zeroForOne) {
+        //     console2.log("buyTokensOwed1", buyTokensOwed);
+        // } else {
+        //     console2.log("buyTokensOwed0", buyTokensOwed);
+        // }
 
         if (isOrderExpired) {
             delete twamm.orders[orderId];
@@ -424,46 +439,29 @@ contract TWAMM is BaseHook, ITWAMM {
         uint256 prevTimestamp = self.lastVirtualOrderTimestamp;
         uint256 nextExpirationTimestamp = prevTimestamp + expirationInterval;
 
-        OrderPool.State storage orderPool0For1 = self.orderPool0For1;
-        OrderPool.State storage orderPool1For0 = self.orderPool1For0;
-
         unchecked {
             while (nextExpirationTimestamp <= currentTimestampAtInterval) {
-                if (
-                    orderPool0For1.sellRateEndingAtInterval[nextExpirationTimestamp] > 0
-                        || orderPool1For0.sellRateEndingAtInterval[nextExpirationTimestamp] > 0
-                ) {
-                    if (orderPool0For1.sellRateCurrent != 0 && orderPool1For0.sellRateCurrent != 0) {
-                        pool = _advanceToNewTimestamp(
-                            self,
-                            key,
-                            AdvanceParams(
-                                expirationInterval,
-                                nextExpirationTimestamp,
-                                nextExpirationTimestamp - prevTimestamp,
-                                pool
-                            )
-                        );
-                    } else {
-                        pool = _advanceTimestampForSinglePoolSell(
-                            self,
-                            key,
-                            AdvanceSingleParams(
-                                expirationInterval,
-                                nextExpirationTimestamp,
-                                nextExpirationTimestamp - prevTimestamp,
-                                pool,
-                                orderPool0For1.sellRateCurrent != 0
-                            )
-                        );
-                    }
+                console2.log("next loop", nextExpirationTimestamp, currentTimestampAtInterval);
+                if (_hasOutstandingOrdersAtInterval(self, nextExpirationTimestamp)) {
+                    pool = _advanceTimestampForSinglePoolSell(
+                        self,
+                        key,
+                        AdvanceSingleParams(
+                            expirationInterval,
+                            nextExpirationTimestamp,
+                            nextExpirationTimestamp - prevTimestamp,
+                            pool,
+                            false
+                        )
+                    );
+
+                    console2.log("sellRate0To1", self.orderPool0For1.sellRateCurrent);
+                    console2.log("sellRate1To0", self.orderPool1For0.sellRateCurrent);
 
                     prevTimestamp = nextExpirationTimestamp;
                 }
 
                 nextExpirationTimestamp += expirationInterval;
-
-                // console2.log("hasOutstandingOrders", _hasOutstandingOrders(self));
 
                 if (!_hasOutstandingOrders(self)) {
                     break;
@@ -471,30 +469,20 @@ contract TWAMM is BaseHook, ITWAMM {
             }
 
             if (prevTimestamp < currentTimestampAtInterval && _hasOutstandingOrders(self)) {
-                if (orderPool0For1.sellRateCurrent != 0 && orderPool1For0.sellRateCurrent != 0) {
-                    pool = _advanceToNewTimestamp(
-                        self,
-                        key,
-                        AdvanceParams(
-                            expirationInterval,
-                            currentTimestampAtInterval,
-                            currentTimestampAtInterval - prevTimestamp,
-                            pool
-                        )
-                    );
-                } else {
-                    pool = _advanceTimestampForSinglePoolSell(
-                        self,
-                        key,
-                        AdvanceSingleParams(
-                            expirationInterval,
-                            currentTimestampAtInterval,
-                            currentTimestampAtInterval - prevTimestamp,
-                            pool,
-                            orderPool0For1.sellRateCurrent != 0
-                        )
-                    );
-                }
+                pool = _advanceTimestampForSinglePoolSell(
+                    self,
+                    key,
+                    AdvanceSingleParams(
+                        expirationInterval,
+                        currentTimestampAtInterval,
+                        currentTimestampAtInterval - prevTimestamp,
+                        pool,
+                        false
+                    )
+                );
+
+                console2.log("sellRate0To1", self.orderPool0For1.sellRateCurrent);
+                console2.log("sellRate1To0", self.orderPool1For0.sellRateCurrent);
             }
         }
 
@@ -511,61 +499,50 @@ contract TWAMM is BaseHook, ITWAMM {
         PoolParamsOnExecute pool;
     }
 
-    function _advanceToNewTimestamp(TWAMMState storage self, PoolKey memory poolKey, AdvanceParams memory params)
+    function _exhaustMatchedOrders(TWAMMState storage self, AdvanceParams memory params)
         private
-        returns (PoolParamsOnExecute memory)
+        returns (bool remainingZeroForOne)
     {
-        uint160 initialSqrtPriceX96 = params.pool.sqrtPriceX96;
-        uint256 secondsElapsedX96 = params.secondsElapsed * FixedPoint96.Q96;
-        uint160 finalSqrtPriceX96;
+        console2.log("_exhaustMatchedOrders", params.secondsElapsed);
+        uint256 priceSq = uint256(params.pool.sqrtPriceX96) ** 2 >> FixedPoint96.RESOLUTION;
+        // uint256 amount0To1 = self.orderPool0For1.sellRateCurrent * params.secondsElapsed;
+        // uint256 amount1To0 = self.orderPool1For0.sellRateCurrent * params.secondsElapsed;
 
-        while (true) {
-            TwammMath.ExecutionUpdateParams memory executionParams = TwammMath.ExecutionUpdateParams(
-                secondsElapsedX96,
-                params.pool.sqrtPriceX96,
-                params.pool.liquidity,
-                self.orderPool0For1.sellRateCurrent,
-                self.orderPool1For0.sellRateCurrent
+        uint256 sellRate0To1 = self.orderPool0For1.sellRateCurrent;
+        uint256 sellRate1To0 = self.orderPool1For0.sellRateCurrent;
+        uint256 sellRate0To1As1 = (sellRate0To1 * priceSq) >> FixedPoint96.RESOLUTION;
+        uint256 sellRate1To0As0 = (sellRate1To0 << FixedPoint96.RESOLUTION) / priceSq;
+
+        console2.log("sellRate0To1", self.orderPool0For1.sellRateCurrent);
+        console2.log("sellRate1To0", self.orderPool1For0.sellRateCurrent);
+        console2.log("sellRate0To1As1", sellRate0To1As1);
+        console2.log("sellRate1To0As0", sellRate1To0As0);
+
+        // Need to figure out how much sell rate we can adjust between the two of them.
+        uint256 maxAdjustable0To1 = sellRate0To1 > sellRate1To0As0 ? sellRate1To0As0 : sellRate0To1;
+        uint256 maxAdjustable1To0 = sellRate1To0 > sellRate0To1As1 ? sellRate0To1As1 : sellRate1To0;
+
+        console2.log("maxAdjustable0To1", maxAdjustable0To1);
+        console2.log("maxAdjustable1To0", maxAdjustable1To0);
+
+        // If one is zero, the other must be zero too.
+        if (maxAdjustable0To1 != 0) {
+            sellRate0To1As1 = (maxAdjustable0To1 * priceSq) >> FixedPoint96.RESOLUTION;
+            sellRate1To0As0 = (maxAdjustable1To0 << FixedPoint96.RESOLUTION) / priceSq;
+
+            self.orderPool0For1.advanceWithoutCommit(
+                params.nextTimestamp,
+                (sellRate0To1As1 * params.secondsElapsed * FixedPoint96.Q96 / sellRate0To1),
+                maxAdjustable0To1
             );
-
-            finalSqrtPriceX96 = TwammMath.getNewSqrtPriceX96(executionParams);
-
-            (bool crossingInitializedTick, int24 tick) =
-                _isCrossingInitializedTick(params.pool, poolKey, finalSqrtPriceX96);
-
-            unchecked {
-                if (crossingInitializedTick) {
-                    uint256 secondsUntilCrossingX96;
-                    (params.pool, secondsUntilCrossingX96) =
-                        _advanceTimeThroughTickCrossing(self, poolKey, TickCrossingParams(tick, params.pool));
-                    secondsElapsedX96 = secondsElapsedX96 - secondsUntilCrossingX96;
-                } else {
-                    (uint256 earningsFactorPool0, uint256 earningsFactorPool1) =
-                        TwammMath.calculateEarningsUpdates(executionParams, finalSqrtPriceX96);
-
-                    uint256 sellRateActive = (initialSqrtPriceX96 > finalSqrtPriceX96)
-                        ? (self.orderPool0For1.sellRateCurrent)
-                        : (self.orderPool1For0.sellRateCurrent);
-
-                    params.pool.maxSwapAmount += params.secondsElapsed.toInt256() * sellRateActive.toInt256();
-
-                    if (params.nextTimestamp % params.expirationInterval == 0) {
-                        self.orderPool0For1.advanceToInterval(params.nextTimestamp, earningsFactorPool0);
-                        self.orderPool1For0.advanceToInterval(params.nextTimestamp, earningsFactorPool1);
-                    } else {
-                        // @review This is now useless since timestamps are always on interval.
-                        self.orderPool0For1.advanceToCurrentTime(earningsFactorPool0);
-                        self.orderPool1For0.advanceToCurrentTime(earningsFactorPool1);
-                    }
-
-                    params.pool.sqrtPriceX96 = finalSqrtPriceX96;
-
-                    break;
-                }
-            }
+            self.orderPool1For0.advanceWithoutCommit(
+                params.nextTimestamp,
+                (sellRate1To0As0 * params.secondsElapsed * FixedPoint96.Q96 / sellRate1To0),
+                maxAdjustable1To0
+            );
         }
 
-        return params.pool;
+        return sellRate0To1 - maxAdjustable0To1 != 0;
     }
 
     struct AdvanceSingleParams {
@@ -581,11 +558,19 @@ contract TWAMM is BaseHook, ITWAMM {
         PoolKey memory poolKey,
         AdvanceSingleParams memory params
     ) private returns (PoolParamsOnExecute memory) {
+        console2.log("_advanceTimestampForSinglePoolSell", params.nextTimestamp, params.secondsElapsed);
+        // Including zeroForOne in the params because stack-too-deep
+        (params.zeroForOne) = _exhaustMatchedOrders(
+            self, AdvanceParams(expirationInterval, params.nextTimestamp, params.secondsElapsed, params.pool)
+        );
+
         OrderPool.State storage orderPool = params.zeroForOne ? self.orderPool0For1 : self.orderPool1For0;
-        uint256 sellRateCurrent = orderPool.sellRateCurrent;
+        uint256 sellRateCurrent = orderPool.sellRateCurrent - orderPool.sellRateAccounted;
         uint256 amountSelling = sellRateCurrent * params.secondsElapsed * (SwapMath.MAX_SWAP_FEE - params.pool.totalFee)
             / SwapMath.MAX_SWAP_FEE;
         uint256 totalEarnings;
+
+        console2.log("amountSelling", amountSelling);
 
         while (true) {
             uint160 finalSqrtPriceX96 = SqrtPriceMath.getNextSqrtPriceFromInput(
@@ -621,17 +606,25 @@ contract TWAMM is BaseHook, ITWAMM {
                     totalEarnings += SqrtPriceMath.getAmount1Delta(
                         params.pool.sqrtPriceX96, finalSqrtPriceX96, params.pool.liquidity, true
                     );
-                    params.pool.maxSwapAmount -= (params.secondsElapsed * orderPool.sellRateCurrent).toInt256();
+                    params.pool.maxSwapAmount -= (params.secondsElapsed * sellRateCurrent).toInt256();
                 } else {
                     totalEarnings += SqrtPriceMath.getAmount0Delta(
                         params.pool.sqrtPriceX96, finalSqrtPriceX96, params.pool.liquidity, true
                     );
-                    params.pool.maxSwapAmount += (params.secondsElapsed * orderPool.sellRateCurrent).toInt256();
+                    params.pool.maxSwapAmount += (params.secondsElapsed * sellRateCurrent).toInt256();
                 }
 
-                uint256 accruedEarningsFactor = (totalEarnings * FixedPoint96.Q96) / sellRateCurrent;
+                uint256 accruedEarningsFactor = (totalEarnings * FixedPoint96.Q96) / orderPool.sellRateCurrent;
+                console2.log("accruedEarningsFactor", accruedEarningsFactor);
                 if (params.nextTimestamp % params.expirationInterval == 0) {
-                    orderPool.advanceToInterval(params.nextTimestamp, accruedEarningsFactor);
+                    // orderPool.advanceToInterval(params.nextTimestamp, accruedEarningsFactor);
+
+                    self.orderPool0For1.advanceToInterval(
+                        params.nextTimestamp, params.zeroForOne ? accruedEarningsFactor : 0
+                    );
+                    self.orderPool1For0.advanceToInterval(
+                        params.nextTimestamp, params.zeroForOne ? 0 : accruedEarningsFactor
+                    );
                 } else {
                     // @review This is now useless since timestamps are always on interval.
                     orderPool.advanceToCurrentTime(accruedEarningsFactor);
@@ -644,55 +637,6 @@ contract TWAMM is BaseHook, ITWAMM {
         }
 
         return params.pool;
-    }
-
-    struct TickCrossingParams {
-        int24 initializedTick;
-        PoolParamsOnExecute pool;
-    }
-
-    function _advanceTimeThroughTickCrossing(
-        TWAMMState storage self,
-        PoolKey memory poolKey,
-        TickCrossingParams memory params
-    ) private returns (PoolParamsOnExecute memory, uint256) {
-        uint160 initializedSqrtPrice = params.initializedTick.getSqrtPriceAtTick();
-
-        uint256 secondsUntilCrossingX96 = TwammMath.calculateTimeBetweenTicks(
-            params.pool.liquidity,
-            params.pool.sqrtPriceX96,
-            initializedSqrtPrice,
-            self.orderPool0For1.sellRateCurrent,
-            self.orderPool1For0.sellRateCurrent
-        );
-
-        (uint256 earningsFactorPool0, uint256 earningsFactorPool1) = TwammMath.calculateEarningsUpdates(
-            TwammMath.ExecutionUpdateParams(
-                secondsUntilCrossingX96,
-                params.pool.sqrtPriceX96,
-                params.pool.liquidity,
-                self.orderPool0For1.sellRateCurrent,
-                self.orderPool1For0.sellRateCurrent
-            ),
-            initializedSqrtPrice
-        );
-
-        self.orderPool0For1.advanceToCurrentTime(earningsFactorPool0);
-        self.orderPool1For0.advanceToCurrentTime(earningsFactorPool1);
-
-        unchecked {
-            // update pool
-            (, int128 liquidityNet) = poolManager.getTickLiquidity(poolKey.toId(), params.initializedTick);
-            if (initializedSqrtPrice < params.pool.sqrtPriceX96) {
-                liquidityNet = -liquidityNet;
-            }
-            params.pool.liquidity = liquidityNet < 0
-                ? params.pool.liquidity - uint128(-liquidityNet)
-                : params.pool.liquidity + uint128(liquidityNet);
-
-            params.pool.sqrtPriceX96 = initializedSqrtPrice;
-        }
-        return (params.pool, secondsUntilCrossingX96);
     }
 
     function _isCrossingInitializedTick(
@@ -738,6 +682,11 @@ contract TWAMM is BaseHook, ITWAMM {
 
     function _hasOutstandingOrders(TWAMMState storage self) internal view returns (bool) {
         return self.orderPool0For1.sellRateCurrent != 0 || self.orderPool1For0.sellRateCurrent != 0;
+    }
+
+    function _hasOutstandingOrdersAtInterval(TWAMMState storage self, uint256 timestamp) internal view returns (bool) {
+        return self.orderPool0For1.sellRateEndingAtInterval[timestamp] != 0
+            || self.orderPool1For0.sellRateEndingAtInterval[timestamp] != 0;
     }
 
     function _getIntervalTime(uint256 timestamp) internal view returns (uint256) {

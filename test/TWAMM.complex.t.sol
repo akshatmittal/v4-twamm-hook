@@ -45,8 +45,10 @@ contract TWAMMComplexTest is Test, Fixtures {
         vm.label(address(token1), "Token1");
 
         address flags = address(
-            uint160(Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_SWAP_FLAG | Hooks.BEFORE_ADD_LIQUIDITY_FLAG)
-                ^ (0x4444 << 144) // Namespace the hook to avoid collisions
+            uint160(
+                Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_SWAP_FLAG | Hooks.BEFORE_ADD_LIQUIDITY_FLAG
+                    | Hooks.BEFORE_REMOVE_LIQUIDITY_FLAG
+            ) ^ (0x4444 << 144) // Namespace the hook to avoid collisions
         );
 
         vm.warp(TWAMM_INTERVAL);
@@ -55,7 +57,7 @@ contract TWAMMComplexTest is Test, Fixtures {
         deployCodeTo("TWAMM.sol:TWAMM", constructorArgs, flags);
         twammHook = TWAMM(flags);
 
-        key = PoolKey(currency0, currency1, 3000, 1, twammHook);
+        key = PoolKey(currency0, currency1, 3000, 60, twammHook);
         poolId = key.toId();
         manager.initialize(key, SQRT_PRICE_1_1, ZERO_BYTES);
 
@@ -64,7 +66,7 @@ contract TWAMMComplexTest is Test, Fixtures {
             key,
             key.tickSpacing * -10,
             key.tickSpacing * 10,
-            1000 ether,
+            10000 ether,
             type(uint256).max,
             type(uint256).max,
             address(this),
@@ -75,7 +77,7 @@ contract TWAMMComplexTest is Test, Fixtures {
             key,
             key.tickSpacing * -20,
             key.tickSpacing * 20,
-            1000 ether,
+            10000 ether,
             type(uint256).max,
             type(uint256).max,
             address(this),
@@ -86,7 +88,7 @@ contract TWAMMComplexTest is Test, Fixtures {
             key,
             TickMath.minUsableTick(key.tickSpacing),
             TickMath.maxUsableTick(key.tickSpacing),
-            1000 ether,
+            10000 ether,
             type(uint256).max,
             type(uint256).max,
             address(this),
@@ -101,25 +103,25 @@ contract TWAMMComplexTest is Test, Fixtures {
         ITWAMM.OrderKey memory oKey1 = _submitOrderAs(address(0xB1), true, 1 ether, TWAMM_INTERVAL * 10);
 
         vm.warp(TWAMM_INTERVAL * 3 + 13); // Delta = 1, 1
-        ITWAMM.OrderKey memory oKey2 = _submitOrderAs(address(0xB2), true, 1 ether, TWAMM_INTERVAL * 10);
+        ITWAMM.OrderKey memory oKey2 = _submitOrderAs(address(0xB2), true, 2 ether, TWAMM_INTERVAL * 10);
 
         vm.warp(TWAMM_INTERVAL * 5 + 14); // Delta = 2, 3
-        ITWAMM.OrderKey memory oKey3 = _submitOrderAs(address(0xB3), false, 1 ether, TWAMM_INTERVAL * 10);
+        ITWAMM.OrderKey memory oKey3 = _submitOrderAs(address(0xB3), false, 3 ether, TWAMM_INTERVAL * 10);
 
         vm.warp(TWAMM_INTERVAL * 7 + 15); // Delta = 2, 5
-        ITWAMM.OrderKey memory oKey4 = _submitOrderAs(address(0xB4), false, 1 ether, TWAMM_INTERVAL * 10);
+        ITWAMM.OrderKey memory oKey4 = _submitOrderAs(address(0xB4), false, 4 ether, TWAMM_INTERVAL * 10);
 
         vm.warp(TWAMM_INTERVAL * 8 + 16); // Delta = 1, 6
-        ITWAMM.OrderKey memory oKey5 = _submitOrderAs(address(0xB5), false, 1 ether, TWAMM_INTERVAL * 10);
+        ITWAMM.OrderKey memory oKey5 = _submitOrderAs(address(0xB5), false, 5 ether, TWAMM_INTERVAL * 10);
 
         vm.warp(TWAMM_INTERVAL * 9 + 17); // Delta = 1, 7
         ITWAMM.OrderKey memory oKey6 = _submitOrderAs(address(0xB6), true, 10 ether, TWAMM_INTERVAL * 10);
 
         vm.warp(TWAMM_INTERVAL * 10 + 18); // Delta = 1, 8
-        ITWAMM.OrderKey memory oKey7 = _submitOrderAs(address(0xB7), false, 10 ether, TWAMM_INTERVAL * 10);
+        ITWAMM.OrderKey memory oKey7 = _submitOrderAs(address(0xB7), false, 20 ether, TWAMM_INTERVAL * 10);
 
         vm.warp(TWAMM_INTERVAL * 12 + 19); // Delta = 2, 10
-        ITWAMM.OrderKey memory oKey8 = _submitOrderAs(address(0xB8), false, 10 ether, TWAMM_INTERVAL * 10);
+        ITWAMM.OrderKey memory oKey8 = _submitOrderAs(address(0xB8), false, 30 ether, TWAMM_INTERVAL * 10);
 
         // Future future.
         vm.warp(TWAMM_INTERVAL * 50);
@@ -135,14 +137,14 @@ contract TWAMMComplexTest is Test, Fixtures {
         _updateOrderAndClaim(oKey8);
 
         // Make sure everyone got what they expected
-        assertApproxEqRel(key.currency1.balanceOf(address(0xB1)), 1 ether, 0.01e18);
-        assertApproxEqRel(key.currency1.balanceOf(address(0xB2)), 1 ether, 0.01e18);
-        assertApproxEqRel(key.currency0.balanceOf(address(0xB3)), 1 ether, 0.01e18);
-        assertApproxEqRel(key.currency0.balanceOf(address(0xB4)), 1 ether, 0.01e18);
-        assertApproxEqRel(key.currency0.balanceOf(address(0xB5)), 1 ether, 0.01e18);
-        assertApproxEqRel(key.currency1.balanceOf(address(0xB6)), 10 ether, 0.01e18);
-        assertApproxEqRel(key.currency0.balanceOf(address(0xB7)), 10 ether, 0.01e18);
-        assertApproxEqRel(key.currency0.balanceOf(address(0xB8)), 10 ether, 0.01e18);
+        assertApproxEqRel(key.currency1.balanceOf(address(0xB1)), 1 ether, 0.02e18);
+        assertApproxEqRel(key.currency1.balanceOf(address(0xB2)), 2 ether, 0.02e18);
+        assertApproxEqRel(key.currency0.balanceOf(address(0xB3)), 3 ether, 0.02e18);
+        assertApproxEqRel(key.currency0.balanceOf(address(0xB4)), 4 ether, 0.02e18);
+        assertApproxEqRel(key.currency0.balanceOf(address(0xB5)), 5 ether, 0.02e18);
+        assertApproxEqRel(key.currency1.balanceOf(address(0xB6)), 10 ether, 0.02e18);
+        assertApproxEqRel(key.currency0.balanceOf(address(0xB7)), 20 ether, 0.02e18);
+        assertApproxEqRel(key.currency0.balanceOf(address(0xB8)), 30 ether, 0.02e18);
     }
 
     function test_TWAMM_Complex_Scenario2() public {

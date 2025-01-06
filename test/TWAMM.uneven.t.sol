@@ -15,6 +15,7 @@ import {IPositionManager} from "v4-periphery/src/interfaces/IPositionManager.sol
 import {Constants} from "v4-core/test/utils/Constants.sol";
 import {MockERC20} from "solmate/src/test/utils/mocks/MockERC20.sol";
 import {LPFeeLibrary} from "@uniswap/v4-core/src/libraries/LPFeeLibrary.sol";
+import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 
 import {EasyPosm} from "./utils/EasyPosm.sol";
 import {Fixtures} from "./utils/Fixtures.sol";
@@ -44,8 +45,10 @@ contract TWAMMUnevenTest is Test, Fixtures {
         vm.label(address(token1), "Token1");
 
         address flags = address(
-            uint160(Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_SWAP_FLAG | Hooks.BEFORE_ADD_LIQUIDITY_FLAG)
-                ^ (0x4444 << 144) // Namespace the hook to avoid collisions
+            uint160(
+                Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_SWAP_FLAG | Hooks.BEFORE_ADD_LIQUIDITY_FLAG
+                    | Hooks.BEFORE_REMOVE_LIQUIDITY_FLAG
+            ) ^ (0x4444 << 144) // Namespace the hook to avoid collisions
         );
 
         vm.warp(10_000);
@@ -101,37 +104,65 @@ contract TWAMMUnevenTest is Test, Fixtures {
     function test_TWAMM_Uneven_Playground() public {
         uint256 orderDuration = 20_000;
 
+        // BalanceDelta delta = swap(key, true, -int256(80 ether), ZERO_BYTES);
+        // console2.log("delta0", delta.amount0());
+        // console2.log("delta1", delta.amount1());
+
         vm.warp(10_000);
-        ITWAMM.OrderKey memory oKey1 = _submitOrderSingleDirection(true, 80 ether, orderDuration);
-        ITWAMM.OrderKey memory oKey2 = _submitOrderSingleDirection(false, 25 ether, orderDuration);
+        ITWAMM.OrderKey memory oKey1 = _submitOrderAs(address(0xB1), true, 80 ether, orderDuration);
+        ITWAMM.OrderKey memory oKey2 = _submitOrderAs(address(0xB2), false, 10 ether, orderDuration);
 
-        console2.log("twammBalance0", token0.balanceOf(address(twammHook)));
-        console2.log("twammBalance1", token1.balanceOf(address(twammHook)));
+        console2.log("twammBalance0 %18e", token0.balanceOf(address(twammHook)));
+        console2.log("twammBalance1 %18e", token1.balanceOf(address(twammHook)));
 
-        vm.warp(30_000);
+        vm.warp(10_000 * 10);
+        console2.log("------");
         twammHook.executeTWAMMOrders(key);
+        console2.log("------");
 
-        console2.log("twammBalance0", token0.balanceOf(address(twammHook)));
-        console2.log("twammBalance1", token1.balanceOf(address(twammHook)));
+        console2.log("twammBalance0 %18e", token0.balanceOf(address(twammHook)));
+        console2.log("twammBalance1 %18e", token1.balanceOf(address(twammHook)));
 
-        twammHook.sync(key, oKey1, false);
-        twammHook.sync(key, oKey2, false);
+        _updateOrderAndClaim(oKey1);
+        _updateOrderAndClaim(oKey2);
+
+        (, uint256 ef0) = twammHook.getOrderPool(key, true);
+        (, uint256 ef1) = twammHook.getOrderPool(key, false);
+
+        console2.log("ef0", ef0);
+        console2.log("ef1", ef1);
+
+        assertApproxEqRel(key.currency1.balanceOf(address(0xB1)), 20 ether, 0.02e18);
+        assertApproxEqRel(key.currency0.balanceOf(address(0xB2)), 40 ether, 0.02e18);
+
+        console2.log("twammBalance0 %18e", token0.balanceOf(address(twammHook)));
+        console2.log("twammBalance1 %18e", token1.balanceOf(address(twammHook)));
     }
 
-    function _submitOrderAs(address owner, bool zeroForOne, uint256 amount, uint160 duration)
+    function _updateOrderAndClaim(ITWAMM.OrderKey memory oKey) internal {
+        vm.startPrank(oKey.owner);
+        twammHook.syncAndClaimTokens(key, oKey);
+        vm.stopPrank();
+    }
+
+    function _submitOrderAs(address owner, bool zeroForOne, uint256 amount, uint256 duration)
         internal
         returns (ITWAMM.OrderKey memory oKey)
     {
-        token0.transfer(address(owner), amount);
-        token1.transfer(address(owner), amount);
+        if (zeroForOne) {
+            token0.transfer(address(owner), amount);
+        } else {
+            token1.transfer(address(owner), amount);
+        }
 
         vm.startPrank(owner);
-        token0.approve(address(twammHook), amount);
-        token1.approve(address(twammHook), amount);
+        if (zeroForOne) {
+            token0.approve(address(twammHook), amount);
+        } else {
+            token1.approve(address(twammHook), amount);
+        }
 
-        oKey = ITWAMM.OrderKey(owner, uint160(block.timestamp) + duration, zeroForOne);
-
-        twammHook.submitOrder(key, zeroForOne, duration, amount);
+        (, oKey) = twammHook.submitOrder(key, zeroForOne, duration, amount);
         vm.stopPrank();
     }
 
