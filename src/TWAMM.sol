@@ -259,12 +259,12 @@ contract TWAMM is BaseHook, ITWAMM {
         self.orders[orderId] = Order({sellRate: sellRate, earningsFactorLast: orderPool.earningsFactorCurrent});
     }
 
-    function syncAndClaimTokens(PoolKey memory key, OrderKey memory orderKey)
+    function syncAndClaimTokens(PoolKey memory key, OrderKey memory orderKey, bool removeRemaining)
         external
         returns (uint256 tokens0Claimed, uint256 tokens1Claimed)
     {
         // Calls executeTWAMMOrders
-        sync(key, orderKey, false);
+        sync(key, orderKey, removeRemaining);
 
         tokens0Claimed = _claimTokens(key.currency0);
         tokens1Claimed = _claimTokens(key.currency1);
