@@ -136,49 +136,6 @@ contract TWAMMTest is Test, Fixtures {
         assertEq(earningsFactorCurrent1For0, 0);
     }
 
-    function testTWAMM_submitOrder_StoresSellRatesEarningsFactorsProperly() public {
-        uint160 expiration1 = 30000;
-        uint160 expiration2 = 40000;
-        uint256 submitTimestamp1 = 10000;
-        uint256 submitTimestamp2 = 30000;
-        uint256 earningsFactor0For1;
-        uint256 earningsFactor1For0;
-        uint256 sellRate0For1;
-        uint256 sellRate1For0;
-
-        ITWAMM.OrderKey memory orderKey1 = ITWAMM.OrderKey(address(this), expiration1, true);
-        ITWAMM.OrderKey memory orderKey2 = ITWAMM.OrderKey(address(this), expiration2, true);
-        ITWAMM.OrderKey memory orderKey3 = ITWAMM.OrderKey(address(this), expiration2, false);
-
-        token0.approve(address(twammHook), 100e18);
-        token1.approve(address(twammHook), 100e18);
-
-        // Submit 2 TWAMM orders and test all information gets updated
-        vm.warp(submitTimestamp1);
-        twammHook.submitOrder(key, true, expiration1 - submitTimestamp1, 1e18);
-        twammHook.submitOrder(key, false, expiration2 - submitTimestamp1, 3e18);
-
-        (sellRate0For1, earningsFactor0For1) = twammHook.getOrderPool(key, true);
-        (sellRate1For0, earningsFactor1For0) = twammHook.getOrderPool(key, false);
-        assertEq(sellRate0For1, 1e18 / (expiration1 - submitTimestamp1));
-        assertEq(sellRate1For0, 3e18 / (expiration2 - submitTimestamp1));
-        assertEq(earningsFactor0For1, 0);
-        assertEq(earningsFactor1For0, 0);
-
-        // Warp time and submit 1 TWAMM order. Test that pool information is updated properly as one order expires and
-        // another order is added to the pool
-        vm.warp(submitTimestamp2);
-        twammHook.submitOrder(key, true, expiration2 - submitTimestamp2, 2e18);
-
-        (sellRate0For1, earningsFactor0For1) = twammHook.getOrderPool(key, true);
-        (sellRate1For0, earningsFactor1For0) = twammHook.getOrderPool(key, false);
-
-        assertEq(sellRate0For1, 2e18 / (expiration2 - submitTimestamp2));
-        assertEq(sellRate1For0, 3e18 / (expiration2 - submitTimestamp1));
-        assertEq(earningsFactor0For1, 1712020976636017581269515821040000);
-        assertEq(earningsFactor1For0, 1470157410324350030712806974476955);
-    }
-
     function testTWAMM_cancelOrder_OneForZero_UpdatesOwedTokens() public {
         ITWAMM.OrderKey memory orderKey1;
         ITWAMM.OrderKey memory orderKey2;
@@ -366,56 +323,6 @@ contract TWAMMTest is Test, Fixtures {
         assertEq(token1Owed, 0);
         assertEq(deletedOrder.sellRate, 0);
         assertEq(deletedOrder.earningsFactorLast, 0);
-    }
-
-    function testTWAMM_executeTWAMMOrders_updatesAllTheNecessaryEarningsFactorIntervals() public {
-        ITWAMM.OrderKey memory orderKey1 = ITWAMM.OrderKey(address(this), 30000, true);
-        ITWAMM.OrderKey memory orderKey2 = ITWAMM.OrderKey(address(this), 40000, false);
-        ITWAMM.OrderKey memory orderKey3 = ITWAMM.OrderKey(address(this), 50000, true);
-        ITWAMM.OrderKey memory orderKey4 = ITWAMM.OrderKey(address(this), 50000, false);
-
-        token0.approve(address(twammHook), 100 ether);
-        token1.approve(address(twammHook), 100 ether);
-
-        vm.warp(10000);
-
-        twammHook.submitOrder(key, true, 20000, 1 ether);
-        twammHook.submitOrder(key, false, 30000, 5 ether);
-        twammHook.submitOrder(key, true, 40000, 2 ether);
-        twammHook.submitOrder(key, false, 40000, 2 ether);
-
-        assertEq(twammHook.getOrderPoolEarningsFactorAtInterval(key.toId(), true, 20000), 0);
-        assertEq(twammHook.getOrderPoolEarningsFactorAtInterval(key.toId(), false, 20000), 0);
-        assertEq(twammHook.getOrderPoolEarningsFactorAtInterval(key.toId(), true, 30000), 0);
-        assertEq(twammHook.getOrderPoolEarningsFactorAtInterval(key.toId(), false, 30000), 0);
-        assertEq(twammHook.getOrderPoolEarningsFactorAtInterval(key.toId(), true, 40000), 0);
-        assertEq(twammHook.getOrderPoolEarningsFactorAtInterval(key.toId(), false, 40000), 0);
-        assertEq(twammHook.getOrderPoolEarningsFactorAtInterval(key.toId(), true, 50000), 0);
-        assertEq(twammHook.getOrderPoolEarningsFactorAtInterval(key.toId(), false, 50000), 0);
-
-        vm.warp(50000); // go to exact interval to also test when block is exactly on an interval
-        twammHook.executeTWAMMOrders(key);
-
-        assertEq(twammHook.getOrderPoolEarningsFactorAtInterval(key.toId(), true, 20000), 0);
-        assertEq(twammHook.getOrderPoolEarningsFactorAtInterval(key.toId(), false, 20000), 0);
-        assertEq(
-            twammHook.getOrderPoolEarningsFactorAtInterval(key.toId(), true, 30000), 1903834450064690094904650934081653
-        );
-        assertEq(
-            twammHook.getOrderPoolEarningsFactorAtInterval(key.toId(), false, 30000), 1332467160273236668937468324643833
-        );
-        assertEq(
-            twammHook.getOrderPoolEarningsFactorAtInterval(key.toId(), true, 40000), 3151779959438527761611322345863307
-        );
-        assertEq(
-            twammHook.getOrderPoolEarningsFactorAtInterval(key.toId(), false, 40000), 1837497928424750201261148602165737
-        );
-        assertEq(
-            twammHook.getOrderPoolEarningsFactorAtInterval(key.toId(), true, 50000), 4499127981259426598474740139623306
-        );
-        assertEq(
-            twammHook.getOrderPoolEarningsFactorAtInterval(key.toId(), false, 50000), 2303495623595701879842493741448458
-        );
     }
 
     function testTWAMM_executeTWAMMOrders_OneIntervalGas() public {

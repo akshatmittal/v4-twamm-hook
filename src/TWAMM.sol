@@ -25,11 +25,8 @@ import {LiquidityMath} from "@uniswap/v4-core/src/libraries/LiquidityMath.sol";
 import {ITWAMM} from "@src/ITWAMM.sol";
 
 import {PoolGetters} from "@lib/PoolGetters.sol";
-// import {TwammMath} from "@lib/TwammMath.sol";
 import {OrderPool} from "@lib/OrderPool.sol";
 import {TransferHelper} from "@lib/TransferHelper.sol";
-
-import "forge-std/console2.sol";
 
 contract TWAMM is BaseHook, ITWAMM {
     using TransferHelper for IERC20Minimal;
@@ -176,20 +173,14 @@ contract TWAMM is BaseHook, ITWAMM {
         if (sqrtPriceLimitX96 != 0 && sqrtPriceLimitX96 != sqrtPriceX96 && maxSwapAmount != 0) {
             uint256 maxToSwap = maxSwapAmount > 0 ? uint256(maxSwapAmount) : uint256(-maxSwapAmount);
 
-            console2.log("maxSwapAmount", maxSwapAmount);
-            console2.log("maxToSwap", maxToSwap);
-            console2.log("zeroForOne", zeroForOne);
-
             IPoolManager.SwapParams memory swapParams =
                 IPoolManager.SwapParams(zeroForOne, -maxToSwap.toInt256(), sqrtPriceLimitX96);
 
-            // poolManager.updateDynamicLPFee(key, 0);
             if (poolManager.isUnlocked()) {
                 _processSwap(key, swapParams); // @audit Is this fully safe?
             } else {
                 poolManager.unlock(abi.encode(key, swapParams));
             }
-            // poolManager.updateDynamicLPFee(key, 3000);
 
             emit Fulfillment(poolId, twamm.orderPool0For1.sellRateCurrent, twamm.orderPool0For1.sellRateCurrent);
         }
@@ -326,16 +317,6 @@ contract TWAMM is BaseHook, ITWAMM {
             isOrderExpired ? orderPool.earningsFactorAtInterval[orderKey.expiration] : orderPool.earningsFactorCurrent;
         buyTokensOwed = ((earningsFactorLast - order.earningsFactorLast) * order.sellRate) >> FixedPoint96.RESOLUTION;
 
-        // console2.log("order expiration", orderKey.expiration);
-        // console2.log("earningsFactorLast", earningsFactorLast);
-        // console2.log("orderEarningsFactorLast", order.earningsFactorLast);
-
-        // if (orderKey.zeroForOne) {
-        //     console2.log("buyTokensOwed1", buyTokensOwed);
-        // } else {
-        //     console2.log("buyTokensOwed0", buyTokensOwed);
-        // }
-
         if (isOrderExpired) {
             delete twamm.orders[orderId];
         } else {
@@ -441,7 +422,6 @@ contract TWAMM is BaseHook, ITWAMM {
 
         unchecked {
             while (nextExpirationTimestamp <= currentTimestampAtInterval) {
-                console2.log("next loop", nextExpirationTimestamp, currentTimestampAtInterval);
                 if (_hasOutstandingOrdersAtInterval(self, nextExpirationTimestamp)) {
                     pool = _advanceTimestampForSinglePoolSell(
                         self,
@@ -454,9 +434,6 @@ contract TWAMM is BaseHook, ITWAMM {
                             false
                         )
                     );
-
-                    console2.log("sellRate0To1", self.orderPool0For1.sellRateCurrent);
-                    console2.log("sellRate1To0", self.orderPool1For0.sellRateCurrent);
 
                     prevTimestamp = nextExpirationTimestamp;
                 }
@@ -480,9 +457,6 @@ contract TWAMM is BaseHook, ITWAMM {
                         false
                     )
                 );
-
-                console2.log("sellRate0To1", self.orderPool0For1.sellRateCurrent);
-                console2.log("sellRate1To0", self.orderPool1For0.sellRateCurrent);
             }
         }
 
@@ -503,27 +477,16 @@ contract TWAMM is BaseHook, ITWAMM {
         private
         returns (bool remainingZeroForOne)
     {
-        console2.log("_exhaustMatchedOrders", params.secondsElapsed);
         uint256 priceSq = uint256(params.pool.sqrtPriceX96) ** 2 >> FixedPoint96.RESOLUTION;
-        // uint256 amount0To1 = self.orderPool0For1.sellRateCurrent * params.secondsElapsed;
-        // uint256 amount1To0 = self.orderPool1For0.sellRateCurrent * params.secondsElapsed;
 
         uint256 sellRate0To1 = self.orderPool0For1.sellRateCurrent;
         uint256 sellRate1To0 = self.orderPool1For0.sellRateCurrent;
         uint256 sellRate0To1As1 = (sellRate0To1 * priceSq) >> FixedPoint96.RESOLUTION;
         uint256 sellRate1To0As0 = (sellRate1To0 << FixedPoint96.RESOLUTION) / priceSq;
 
-        console2.log("sellRate0To1", self.orderPool0For1.sellRateCurrent);
-        console2.log("sellRate1To0", self.orderPool1For0.sellRateCurrent);
-        console2.log("sellRate0To1As1", sellRate0To1As1);
-        console2.log("sellRate1To0As0", sellRate1To0As0);
-
         // Need to figure out how much sell rate we can adjust between the two of them.
         uint256 maxAdjustable0To1 = sellRate0To1 > sellRate1To0As0 ? sellRate1To0As0 : sellRate0To1;
         uint256 maxAdjustable1To0 = sellRate1To0 > sellRate0To1As1 ? sellRate0To1As1 : sellRate1To0;
-
-        console2.log("maxAdjustable0To1", maxAdjustable0To1);
-        console2.log("maxAdjustable1To0", maxAdjustable1To0);
 
         // If one is zero, the other must be zero too.
         if (maxAdjustable0To1 != 0) {
@@ -558,7 +521,6 @@ contract TWAMM is BaseHook, ITWAMM {
         PoolKey memory poolKey,
         AdvanceSingleParams memory params
     ) private returns (PoolParamsOnExecute memory) {
-        console2.log("_advanceTimestampForSinglePoolSell", params.nextTimestamp, params.secondsElapsed);
         // Including zeroForOne in the params because stack-too-deep
         (params.zeroForOne) = _exhaustMatchedOrders(
             self, AdvanceParams(expirationInterval, params.nextTimestamp, params.secondsElapsed, params.pool)
@@ -569,8 +531,6 @@ contract TWAMM is BaseHook, ITWAMM {
         uint256 amountSelling = sellRateCurrent * params.secondsElapsed * (SwapMath.MAX_SWAP_FEE - params.pool.totalFee)
             / SwapMath.MAX_SWAP_FEE;
         uint256 totalEarnings;
-
-        console2.log("amountSelling", amountSelling);
 
         while (true) {
             uint160 finalSqrtPriceX96 = SqrtPriceMath.getNextSqrtPriceFromInput(
@@ -615,10 +575,7 @@ contract TWAMM is BaseHook, ITWAMM {
                 }
 
                 uint256 accruedEarningsFactor = (totalEarnings * FixedPoint96.Q96) / orderPool.sellRateCurrent;
-                console2.log("accruedEarningsFactor", accruedEarningsFactor);
                 if (params.nextTimestamp % params.expirationInterval == 0) {
-                    // orderPool.advanceToInterval(params.nextTimestamp, accruedEarningsFactor);
-
                     self.orderPool0For1.advanceToInterval(
                         params.nextTimestamp, params.zeroForOne ? accruedEarningsFactor : 0
                     );
