@@ -60,7 +60,7 @@ contract TWAMMUnevenTest is Test, Fixtures {
         // key = PoolKey(currency0, currency1, LPFeeLibrary.DYNAMIC_FEE_FLAG, 60, twammHook);
         key = PoolKey(currency0, currency1, 3000, 60, twammHook);
         poolId = key.toId();
-        manager.initialize(key, SQRT_PRICE_1_4, ZERO_BYTES);
+        manager.initialize(key, SQRT_PRICE_1_4);
 
         // This test assumes effectively unlimited liquidity
         posm.mint(

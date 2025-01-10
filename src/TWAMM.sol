@@ -74,7 +74,7 @@ contract TWAMM is BaseHook, ITWAMM {
         });
     }
 
-    function beforeInitialize(address, PoolKey calldata key, uint160, bytes calldata)
+    function beforeInitialize(address, PoolKey calldata key, uint160)
         external
         virtual
         override

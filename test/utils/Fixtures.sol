@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 import {Currency} from "v4-core/src/types/Currency.sol";
 import {BalanceDelta} from "v4-core/src/types/BalanceDelta.sol";
 import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
-import {PositionManager} from "v4-periphery/src/PositionManager.sol";
+import {PositionManager, IPositionDescriptor, IWETH9} from "v4-periphery/src/PositionManager.sol";
 import {IPositionManager} from "v4-periphery/src/interfaces/IPositionManager.sol";
 import {Hooks} from "v4-core/src/libraries/Hooks.sol";
 import {PoolKey} from "v4-core/src/types/PoolKey.sol";
@@ -33,7 +33,9 @@ contract Fixtures is Deployers, DeployPermit2 {
     function deployPosm(IPoolManager poolManager) internal {
         // We use deployPermit2() to prevent having to use via-ir in this repository.
         permit2 = IAllowanceTransfer(deployPermit2());
-        posm = IPositionManager(new PositionManager(poolManager, permit2, 300_000));
+        posm = IPositionManager(
+            new PositionManager(poolManager, permit2, 300_000, IPositionDescriptor(address(0)), IWETH9(address(0)))
+        );
     }
 
     function seedBalance(address to) internal {
