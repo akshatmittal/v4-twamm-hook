@@ -149,6 +149,7 @@ contract TWAMM is BaseHook, ITWAMM {
         self.lastVirtualOrderTimestamp = _getIntervalTime(block.timestamp);
     }
 
+    /// @inheritdoc ITWAMM
     function executeTWAMMOrders(PoolKey memory key, uint256 targetTimestamp) public {
         PoolId poolId = key.toId();
         TWAMMState storage twamm = twammStates[poolId];
@@ -182,7 +183,7 @@ contract TWAMM is BaseHook, ITWAMM {
                 poolManager.unlock(abi.encode(key, swapParams));
             }
 
-            emit Fulfillment(poolId, twamm.orderPool0For1.sellRateCurrent, twamm.orderPool0For1.sellRateCurrent);
+            emit Fulfillment(poolId, twamm.orderPool0For1.sellRateCurrent, twamm.orderPool1For0.sellRateCurrent);
         }
     }
 
@@ -192,10 +193,28 @@ contract TWAMM is BaseHook, ITWAMM {
     }
 
     /// @inheritdoc ITWAMM
-    function submitOrder(PoolKey calldata key, bool zeroForOne, uint256 duration, uint256 amountIn)
+    function batchSubmitOrders(SubmitOrderParams[] calldata orders)
         external
+        returns (bytes32[] memory orderIds, OrderKey[] memory orderKeys)
+    {
+        orderIds = new bytes32[](orders.length);
+        orderKeys = new OrderKey[](orders.length);
+
+        for (uint256 i = 0; i < orders.length; i++) {
+            (orderIds[i], orderKeys[i]) = submitOrder(orders[i]);
+        }
+    }
+
+    /// @inheritdoc ITWAMM
+    function submitOrder(SubmitOrderParams calldata params)
+        public
         returns (bytes32 orderId, OrderKey memory orderKey)
     {
+        PoolKey calldata key = params.key;
+        bool zeroForOne = params.zeroForOne;
+        uint256 duration = params.duration;
+        uint256 amountIn = params.amountIn;
+
         executeTWAMMOrders(key);
 
         PoolId poolId = key.toId();
@@ -207,26 +226,27 @@ contract TWAMM is BaseHook, ITWAMM {
             revert ExpirationLessThanBlocktime(orderKey.expiration);
         }
 
-        uint256 sellRate;
         unchecked {
             // checks done in TWAMM library
-            sellRate = amountIn / duration;
-            orderId = _submitOrder(twamm, orderKey, sellRate);
+            uint256 sellRate = amountIn / duration;
+
+            uint256 earningsFactorLast;
+            (orderId, earningsFactorLast) = _submitOrder(twamm, orderKey, sellRate);
 
             IERC20Minimal(orderKey.zeroForOne ? Currency.unwrap(key.currency0) : Currency.unwrap(key.currency1))
                 .safeTransferFrom(msg.sender, address(this), sellRate * duration);
-        }
 
-        emit SubmitOrder(
-            poolId,
-            orderId,
-            orderKey.owner,
-            amountIn,
-            orderKey.expiration,
-            orderKey.zeroForOne,
-            sellRate,
-            _getOrder(twamm, orderId).earningsFactorLast
-        );
+            emit SubmitOrder(
+                poolId,
+                orderId,
+                orderKey.owner,
+                amountIn,
+                orderKey.expiration,
+                orderKey.zeroForOne,
+                sellRate,
+                earningsFactorLast
+            );
+        }
     }
 
     /// @notice Submits a new long term order into the TWAMM
@@ -234,11 +254,8 @@ contract TWAMM is BaseHook, ITWAMM {
     /// @param orderKey The OrderKey for the new order
     function _submitOrder(TWAMMState storage self, OrderKey memory orderKey, uint256 sellRate)
         internal
-        returns (bytes32 orderId)
+        returns (bytes32 orderId, uint256 earningsFactorLast)
     {
-        if (orderKey.owner != msg.sender) {
-            revert MustBeOwner(orderKey.owner, msg.sender);
-        }
         if (sellRate == 0) {
             revert SellRateCannotBeZero();
         }
@@ -256,25 +273,43 @@ contract TWAMM is BaseHook, ITWAMM {
         orderPool.sellRateCurrent += sellRate;
         orderPool.sellRateEndingAtInterval[orderKey.expiration] += sellRate;
 
-        self.orders[orderId] = Order({sellRate: sellRate, earningsFactorLast: orderPool.earningsFactorCurrent});
+        earningsFactorLast = orderPool.earningsFactorCurrent;
+        self.orders[orderId] = Order({sellRate: sellRate, earningsFactorLast: earningsFactorLast});
     }
 
-    function syncAndClaimTokens(PoolKey memory key, OrderKey memory orderKey, bool removeRemaining)
+    /// @inheritdoc ITWAMM
+    function syncAndClaimTokens(SyncParams calldata params)
         external
         returns (uint256 tokens0Claimed, uint256 tokens1Claimed)
     {
         // Calls executeTWAMMOrders
-        sync(key, orderKey, removeRemaining);
+        sync(params);
 
-        tokens0Claimed = _claimTokens(key.currency0);
-        tokens1Claimed = _claimTokens(key.currency1);
+        (tokens0Claimed, tokens1Claimed) = claimTokens(params.key);
     }
 
     /// @inheritdoc ITWAMM
-    function sync(PoolKey memory key, OrderKey memory orderKey, bool removeRemaining)
-        public
-        returns (uint256 tokens0OwedDelta, uint256 tokens1OwedDelta)
+    function batchSyncAndClaimTokens(SyncParams[] calldata params)
+        external
+        returns (uint256[] memory tokens0Claimed, uint256[] memory tokens1Claimed)
     {
+        tokens0Claimed = new uint256[](params.length);
+        tokens1Claimed = new uint256[](params.length);
+
+        for (uint256 i = 0; i < params.length; i++) {
+            // Calls executeTWAMMOrders
+            sync(params[i]);
+
+            (tokens0Claimed[i], tokens1Claimed[i]) = claimTokens(params[i].key);
+        }
+    }
+
+    /// @inheritdoc ITWAMM
+    function sync(SyncParams calldata params) public returns (uint256 tokens0OwedDelta, uint256 tokens1OwedDelta) {
+        PoolKey calldata key = params.key;
+        OrderKey calldata orderKey = params.orderKey;
+        bool removeRemaining = params.removeRemaining;
+
         executeTWAMMOrders(key);
 
         (uint256 buyTokensOwed, uint256 sellTokensOwed, uint256 newEarningsFactorLast, bytes32 orderId) =
@@ -306,9 +341,6 @@ contract TWAMM is BaseHook, ITWAMM {
         OrderPool.State storage orderPool = orderKey.zeroForOne ? twamm.orderPool0For1 : twamm.orderPool1For0;
         bool isOrderExpired = orderKey.expiration <= block.timestamp;
 
-        if (orderKey.owner != msg.sender) {
-            revert MustBeOwner(orderKey.owner, msg.sender);
-        }
         if (order.sellRate == 0) {
             revert OrderDoesNotExist(orderKey);
         }
@@ -323,7 +355,7 @@ contract TWAMM is BaseHook, ITWAMM {
             order.earningsFactorLast = earningsFactorLast;
         }
 
-        if (removeRemaining && !isOrderExpired) {
+        if (removeRemaining && !isOrderExpired && orderKey.owner == msg.sender) {
             uint256 durationDelta = orderKey.expiration - _getIntervalTime(block.timestamp);
             sellTokensOwed = order.sellRate * durationDelta;
 
@@ -347,9 +379,22 @@ contract TWAMM is BaseHook, ITWAMM {
     }
 
     /// @inheritdoc ITWAMM
-    function claimTokens(PoolKey calldata key) external returns (uint256 tokens0Claimed, uint256 tokens1Claimed) {
+    function claimTokens(PoolKey calldata key) public returns (uint256 tokens0Claimed, uint256 tokens1Claimed) {
         tokens0Claimed = _claimTokens(key.currency0);
         tokens1Claimed = _claimTokens(key.currency1);
+    }
+
+    /// @inheritdoc ITWAMM
+    function batchClaimTokens(PoolKey[] calldata keys)
+        external
+        returns (uint256[] memory tokens0Claimed, uint256[] memory tokens1Claimed)
+    {
+        tokens0Claimed = new uint256[](keys.length);
+        tokens1Claimed = new uint256[](keys.length);
+
+        for (uint256 i = 0; i < keys.length; i++) {
+            (tokens0Claimed[i], tokens1Claimed[i]) = claimTokens(keys[i]);
+        }
     }
 
     function _unlockCallback(bytes calldata rawData) internal override returns (bytes memory) {

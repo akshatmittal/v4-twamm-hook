@@ -14,11 +14,6 @@ interface ITWAMM {
     error PoolWithNativeNotSupported();
     error InvalidTargetTimestamp();
 
-    /// @notice Thrown when account other than owner attempts to interact with an order
-    /// @param owner The owner of the order
-    /// @param currentAccount The invalid account attempting to interact with the order
-    error MustBeOwner(address owner, address currentAccount);
-
     /// @notice Thrown when trying to submit an order with an expiration that isn't on the interval.
     /// @param expiration The expiration timestamp of the order
     error ExpirationNotOnInterval(uint256 expiration);
@@ -69,6 +64,30 @@ interface ITWAMM {
         address owner;
         uint160 expiration;
         bool zeroForOne;
+    }
+
+    /// @notice Data required to sync tokens for multiple orders in a single batch call.
+    /// @param key The PoolKey for which to identify the pool
+    /// @param orderKey The OrderKey for which to identify the order
+    /// @param removeRemaining If true, the remainder of the order should be removed at the current interval
+    struct SyncParams {
+        PoolKey key;
+        OrderKey orderKey;
+        bool removeRemaining;
+    }
+
+    /**
+     * @notice Structure to hold parameters for submitting a TWAMM order.
+     * @param key The PoolKey identifying which Uniswap V4 pool this order applies to
+     * @param zeroForOne The trade direction of the order (true if selling token0 for token1)
+     * @param duration How long the order should stay active
+     * @param amountIn The amount of tokens being sold over the specified duration
+     */
+    struct SubmitOrderParams {
+        PoolKey key;
+        bool zeroForOne;
+        uint256 duration;
+        uint256 amountIn;
     }
 
     /// @notice Emitted when a new long term order is submitted
@@ -127,26 +146,45 @@ interface ITWAMM {
     /// @param delta The balance changes resulting from the swap
     event SwapExecuted(PoolId indexed poolId, BalanceDelta delta);
 
+    /// @notice Allowing sync multiple orders and then claims the owed tokens.
+    /// @dev For each set of parameters, this function calls sync and then claims the owed tokens.
+    /// @param params An SyncParams
+    /// @return tokens0Claimed An array with the amount of token0 claimed for each order
+    /// @return tokens1Claimed An array with the amount of token1 claimed for each order
+    function batchSyncAndClaimTokens(SyncParams[] calldata params)
+        external
+        returns (uint256[] memory tokens0Claimed, uint256[] memory tokens1Claimed);
+
+    /// @notice Allowing sync order and then claims the owed tokens.
+    /// @dev For each set of parameters, this function calls sync and then claims the owed tokens.
+    /// @param params An array of SyncParams
+    /// @return tokens0Claimed An array with the amount of token0 claimed for each order
+    /// @return tokens1Claimed An array with the amount of token1 claimed for each order
+    function syncAndClaimTokens(SyncParams calldata params)
+        external
+        returns (uint256 tokens0Claimed, uint256 tokens1Claimed);
+
     /// @notice Submits a new long term order into the TWAMM. Also executes TWAMM orders if not up to date.
-    /// @param key The PoolKey for which to identify the amm pool of the order
-    /// @param zeroForOne Trade direction
-    /// @param duration Order duration
-    /// @param amountIn The amount of sell token to add to the order. Some precision on amountIn may be lost up to the
-    /// magnitude of (orderKey.expiration - block.timestamp)
+    /// @param params An SubmitOrderParams
     /// @return orderId The bytes32 ID of the order
-    function submitOrder(PoolKey calldata key, bool zeroForOne, uint256 duration, uint256 amountIn)
+    /// @return orderKey The corresponding order key
+    function submitOrder(SubmitOrderParams calldata params)
         external
         returns (bytes32 orderId, OrderKey memory orderKey);
 
+    /// @notice Submits multiple new long term orders into the TWAMM. Also executes TWAMM orders if not up to date.
+    /// @param orders An array of SubmitOrderParams
+    /// @return orderIds The bytes32 IDs of the newly created orders
+    /// @return orderKeys The corresponding order keys for each order
+    function batchSubmitOrders(SubmitOrderParams[] calldata orders)
+        external
+        returns (bytes32[] memory orderIds, OrderKey[] memory orderKeys);
+
     /// @notice Syncs the current pool and order state
-    /// @param key The PoolKey for which to identify the amm pool of the order
-    /// @param orderKey The OrderKey for which to identify the order
-    /// @param removeRemaining If true, the order will be removed after syncing
+    /// @param params An SyncParams
     /// @return tokens0OwedDelta Change to token0 after syncing
     /// @return tokens1OwedDelta Change to token1 after syncing
-    function sync(PoolKey calldata key, OrderKey calldata orderKey, bool removeRemaining)
-        external
-        returns (uint256 tokens0OwedDelta, uint256 tokens1OwedDelta);
+    function sync(SyncParams calldata params) external returns (uint256 tokens0OwedDelta, uint256 tokens1OwedDelta);
 
     /// @notice Claim tokens owed from TWAMM contract
     /// @param key The PoolKey for which to identify the amm pool of the order
@@ -154,10 +192,24 @@ interface ITWAMM {
     /// @return tokens1Claimed The total token1 amount collected
     function claimTokens(PoolKey calldata key) external returns (uint256 tokens0Claimed, uint256 tokens1Claimed);
 
+    /// @notice Batch version of claimTokens, allowing token claims for multiple pools in a single transaction.
+    /// @dev Iterates over the provided array of PoolKeys, calling _claimTokens for each currency in each pool.
+    /// @param keys An array of PoolKeys for which tokens should be claimed
+    /// @return tokens0Claimed An array with the total token0 amount claimed for each pool
+    /// @return tokens1Claimed An array with the total token1 amount claimed for each pool
+    function batchClaimTokens(PoolKey[] calldata keys)
+        external
+        returns (uint256[] memory tokens0Claimed, uint256[] memory tokens1Claimed);
+
     /// @notice Executes TWAMM orders on the pool, swapping on the pool itself to make up the difference between the
     /// two TWAMM pools swapping against each other
     /// @param key The pool key associated with the TWAMM
     function executeTWAMMOrders(PoolKey memory key) external;
+
+    /// @notice Executes all outstanding TWAMM orders on the specified pool, up to the target timestamp.
+    /// @param key The pool key associated with the TWAMM.
+    /// @param targetTimestamp The timestamp until which to process outstanding TWAMM orders (must be >= lastVirtualOrderTimestamp and <= block.timestamp).
+    function executeTWAMMOrders(PoolKey memory key, uint256 targetTimestamp) external;
 
     function tokensOwed(Currency token, address owner) external returns (uint256);
 }
