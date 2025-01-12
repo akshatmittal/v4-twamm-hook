@@ -2,7 +2,7 @@
 pragma solidity ^0.8.26;
 
 import {BaseHook} from "v4-periphery/src/base/hooks/BaseHook.sol";
-import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
+import {IHooks, Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {TickBitmap} from "@uniswap/v4-core/src/libraries/TickBitmap.sol";
 import {SqrtPriceMath} from "@uniswap/v4-core/src/libraries/SqrtPriceMath.sol";
 import {FixedPoint96} from "@uniswap/v4-core/src/libraries/FixedPoint96.sol";
@@ -46,15 +46,17 @@ contract TWAMM is BaseHook, ITWAMM {
     /// @notice Time interval on which orders are allowed to expire. Conserves processing needed on execute.
     uint256 public immutable expirationInterval;
 
-    // twammStates[poolId] => TWAMMState
-    mapping(PoolId => TWAMMState) internal twammStates;
-    // tokensOwed[token][owner] => amountOwed
-    mapping(Currency => mapping(address => uint256)) public tokensOwed;
+    mapping(PoolId poolId => TWAMMState twammState) internal twammStates;
+    mapping(Currency token => mapping(address owner => uint256 amountOwed)) public tokensOwed;
 
     constructor(IPoolManager _manager, uint256 _expirationInterval) BaseHook(_manager) {
+        if (_expirationInterval == 0) {
+            revert InvalidExpirationInterval();
+        }
         expirationInterval = _expirationInterval;
     }
 
+    /// @inheritdoc BaseHook
     function getHookPermissions() public pure override returns (Hooks.Permissions memory) {
         return Hooks.Permissions({
             beforeInitialize: true,
@@ -74,6 +76,7 @@ contract TWAMM is BaseHook, ITWAMM {
         });
     }
 
+    /// @inheritdoc IHooks
     function beforeInitialize(address, PoolKey calldata key, uint160)
         external
         virtual
@@ -91,6 +94,7 @@ contract TWAMM is BaseHook, ITWAMM {
         return BaseHook.beforeInitialize.selector;
     }
 
+    /// @inheritdoc IHooks
     function beforeAddLiquidity(
         address,
         PoolKey calldata key,
@@ -102,6 +106,7 @@ contract TWAMM is BaseHook, ITWAMM {
         return BaseHook.beforeAddLiquidity.selector;
     }
 
+    /// @inheritdoc IHooks
     function beforeRemoveLiquidity(
         address,
         PoolKey calldata key,
@@ -113,6 +118,7 @@ contract TWAMM is BaseHook, ITWAMM {
         return BaseHook.beforeRemoveLiquidity.selector;
     }
 
+    /// @inheritdoc IHooks
     function beforeSwap(address, PoolKey calldata key, IPoolManager.SwapParams calldata, bytes calldata)
         external
         override
@@ -124,14 +130,17 @@ contract TWAMM is BaseHook, ITWAMM {
         return (BaseHook.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
     }
 
+    /// @inheritdoc ITWAMM
     function lastVirtualOrderTimestamp(PoolId key) external view returns (uint256) {
         return twammStates[key].lastVirtualOrderTimestamp;
     }
 
+    /// @inheritdoc ITWAMM
     function getOrder(PoolKey calldata poolKey, OrderKey calldata orderKey) external view returns (Order memory) {
         return _getOrder(twammStates[poolKey.toId()], _orderId(orderKey));
     }
 
+    /// @inheritdoc ITWAMM
     function getOrderPool(PoolKey calldata key, bool zeroForOne)
         external
         view
@@ -285,7 +294,7 @@ contract TWAMM is BaseHook, ITWAMM {
         // Calls executeTWAMMOrders
         sync(params);
 
-        (tokens0Claimed, tokens1Claimed) = claimTokens(params.key);
+        (tokens0Claimed, tokens1Claimed) = claimTokensByPoolKey(params.key);
     }
 
     /// @inheritdoc ITWAMM
@@ -300,7 +309,7 @@ contract TWAMM is BaseHook, ITWAMM {
             // Calls executeTWAMMOrders
             sync(params[i]);
 
-            (tokens0Claimed[i], tokens1Claimed[i]) = claimTokens(params[i].key);
+            (tokens0Claimed[i], tokens1Claimed[i]) = claimTokensByPoolKey(params[i].key);
         }
     }
 
@@ -364,36 +373,41 @@ contract TWAMM is BaseHook, ITWAMM {
     }
 
     function _claimTokens(Currency token) internal returns (uint256 amountTransferred) {
-        uint256 currentBalance = token.balanceOfSelf();
         amountTransferred = tokensOwed[token][msg.sender];
 
-        if (currentBalance < amountTransferred) {
-            amountTransferred = currentBalance; // to catch precision errors
+        if (amountTransferred > 0) {
+            uint256 currentBalance = token.balanceOfSelf();
+
+            if (currentBalance < amountTransferred) {
+                amountTransferred = currentBalance; // to catch precision errors
+            }
+
+            tokensOwed[token][msg.sender] -= amountTransferred; // @audit Should set this to 0 maybe?
+
+            IERC20Minimal(Currency.unwrap(token)).safeTransfer(msg.sender, amountTransferred);
+
+            emit ClaimTokens(token, msg.sender, amountTransferred);
         }
-
-        tokensOwed[token][msg.sender] -= amountTransferred; // @audit Should set this to 0 maybe?
-
-        IERC20Minimal(Currency.unwrap(token)).safeTransfer(msg.sender, amountTransferred);
-
-        emit ClaimTokens(token, msg.sender, amountTransferred);
     }
 
     /// @inheritdoc ITWAMM
-    function claimTokens(PoolKey calldata key) public returns (uint256 tokens0Claimed, uint256 tokens1Claimed) {
+    function claimTokensByPoolKey(PoolKey calldata key)
+        public
+        returns (uint256 tokens0Claimed, uint256 tokens1Claimed)
+    {
         tokens0Claimed = _claimTokens(key.currency0);
         tokens1Claimed = _claimTokens(key.currency1);
     }
 
     /// @inheritdoc ITWAMM
-    function batchClaimTokens(PoolKey[] calldata keys)
+    function claimTokensByCurrencies(Currency[] calldata currencies)
         external
-        returns (uint256[] memory tokens0Claimed, uint256[] memory tokens1Claimed)
+        returns (uint256[] memory tokensClaimed)
     {
-        tokens0Claimed = new uint256[](keys.length);
-        tokens1Claimed = new uint256[](keys.length);
+        tokensClaimed = new uint256[](currencies.length);
 
-        for (uint256 i = 0; i < keys.length; i++) {
-            (tokens0Claimed[i], tokens1Claimed[i]) = claimTokens(keys[i]);
+        for (uint256 i = 0; i < currencies.length; i++) {
+            tokensClaimed[i] = _claimTokens(currencies[i]);
         }
     }
 

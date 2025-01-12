@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSED
+    // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.15;
 
 import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
@@ -11,8 +11,16 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {OrderPool} from "@lib/OrderPool.sol";
 
 interface ITWAMM {
+    /// @notice Thrown when a pool with native currency is not supported
     error PoolWithNativeNotSupported();
+
+    /// @notice Thrown when the provided targetTimestamp is invalid
+    /// @dev This can occur if targetTimestamp is in the future relative to the current block
+    ///      or is older than the last virtual order timestamp in the TWAMM logic.
     error InvalidTargetTimestamp();
+
+    /// @notice Thrown when the provided expirationInterval equals 0
+    error InvalidExpirationInterval();
 
     /// @notice Thrown when trying to submit an order with an expiration that isn't on the interval.
     /// @param expiration The expiration timestamp of the order
@@ -118,7 +126,7 @@ interface ITWAMM {
 
     /// @notice Emitted when an order is synced
     /// @param poolId The id of the corresponding pool
-    /// @param orderId The unique identifier of the order, derived as `keccak256` hash of the `OrderKey`
+    /// @param orderId The unique identifier of the order, derived as keccak256 hash of the OrderKey
     /// @param removeRemaining Indicates whether the remaining order should be canceled at the current interval
     /// @param tokens0OwedDelta Change in owed tokens0
     /// @param tokens1OwedDelta Change in owed tokens1
@@ -145,6 +153,33 @@ interface ITWAMM {
     /// @param poolId The id of the corresponding pool where the swap occurred.
     /// @param delta The balance changes resulting from the swap
     event SwapExecuted(PoolId indexed poolId, BalanceDelta delta);
+
+    /// @notice Returns the last virtual order execution timestamp for a given pool
+    /// @dev This returns the timestamp representing the last time the TWAMM executed orders for the specified pool.
+    /// @param key The PoolId that identifies the pool
+    /// @return timestamp The timestamp of the last TWAMM order execution for the given pool
+    function lastVirtualOrderTimestamp(PoolId key) external view returns (uint256 timestamp);
+
+    /// @notice Retrieves a specific order from the TWAMM for the given pool.
+    /// @dev Provides the entire Order struct associated with the given orderKey in the pool identified by poolKey.
+    /// @param poolKey The PoolKey that identifies the relevant pool
+    /// @param orderKey The OrderKey for which to identify the order
+    /// @return order Information associated with a long term order
+    function getOrder(PoolKey calldata poolKey, OrderKey calldata orderKey)
+        external
+        view
+        returns (Order memory order);
+
+    /// @notice Returns the current sell rate and earnings factor for the chosen order pool.
+    /// @dev Depending on zeroForOne, returns the state for the pool that sells token0 for token1 or vice versa.
+    /// @param key The PoolKey that identifies the relevant pool
+    /// @param zeroForOne True for the token0->token1 order pool; False for the token1->token0 order pool
+    /// @return sellRateCurrent The current cumulative sell rate (amount of tokens sold per interval)
+    /// @return earningsFactorCurrent The current factor used to calculate how many tokens each order is owed
+    function getOrderPool(PoolKey calldata key, bool zeroForOne)
+        external
+        view
+        returns (uint256 sellRateCurrent, uint256 earningsFactorCurrent);
 
     /// @notice Allowing sync multiple orders and then claims the owed tokens.
     /// @dev For each set of parameters, this function calls sync and then claims the owed tokens.
@@ -187,19 +222,19 @@ interface ITWAMM {
     function sync(SyncParams calldata params) external returns (uint256 tokens0OwedDelta, uint256 tokens1OwedDelta);
 
     /// @notice Claim tokens owed from TWAMM contract
-    /// @param key The PoolKey for which to identify the amm pool of the order
+    /// @param key The PoolKey for which to identify the AMM pool of the order
     /// @return tokens0Claimed The total token0 amount collected
     /// @return tokens1Claimed The total token1 amount collected
-    function claimTokens(PoolKey calldata key) external returns (uint256 tokens0Claimed, uint256 tokens1Claimed);
-
-    /// @notice Batch version of claimTokens, allowing token claims for multiple pools in a single transaction.
-    /// @dev Iterates over the provided array of PoolKeys, calling _claimTokens for each currency in each pool.
-    /// @param keys An array of PoolKeys for which tokens should be claimed
-    /// @return tokens0Claimed An array with the total token0 amount claimed for each pool
-    /// @return tokens1Claimed An array with the total token1 amount claimed for each pool
-    function batchClaimTokens(PoolKey[] calldata keys)
+    function claimTokensByPoolKey(PoolKey calldata key)
         external
-        returns (uint256[] memory tokens0Claimed, uint256[] memory tokens1Claimed);
+        returns (uint256 tokens0Claimed, uint256 tokens1Claimed);
+
+    /// @notice Claims tokens owed from the TWAMM contract in a batch for multiple currencies.
+    /// @param currencies An array of currency addresses for which the caller wants to claim tokens.
+    /// @return tokensClaimed An array containing the total amount of tokens claimed for each corresponding currency.
+    function claimTokensByCurrencies(Currency[] calldata currencies)
+        external
+        returns (uint256[] memory tokensClaimed);
 
     /// @notice Executes TWAMM orders on the pool, swapping on the pool itself to make up the difference between the
     /// two TWAMM pools swapping against each other
@@ -210,6 +245,4 @@ interface ITWAMM {
     /// @param key The pool key associated with the TWAMM.
     /// @param targetTimestamp The timestamp until which to process outstanding TWAMM orders (must be >= lastVirtualOrderTimestamp and <= block.timestamp).
     function executeTWAMMOrders(PoolKey memory key, uint256 targetTimestamp) external;
-
-    function tokensOwed(Currency token, address owner) external returns (uint256);
 }

@@ -197,7 +197,7 @@ contract TWAMMFlowTest is Test, Fixtures {
 
         twammHook.sync(ITWAMM.SyncParams({key: key, orderKey: oKey2, removeRemaining: false}));
 
-        twammHook.claimTokens(key);
+        twammHook.claimTokensByPoolKey(key);
     }
 
     function testTWAMM_updatedOrder_CalculateTokensOwedAfterExpiration() public {

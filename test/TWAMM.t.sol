@@ -243,7 +243,7 @@ contract TWAMMTest is Test, Fixtures {
         twammHook.sync(ITWAMM.SyncParams({key: key, orderKey: orderKey1, removeRemaining: false}));
         twammHook.sync(ITWAMM.SyncParams({key: key, orderKey: orderKey2, removeRemaining: false}));
 
-        twammHook.claimTokens(key);
+        twammHook.claimTokensByPoolKey(key);
 
         assertEq(twammHook.tokensOwed(key.currency0, address(this)), 0);
         assertEq(twammHook.tokensOwed(key.currency1, address(this)), 0);
