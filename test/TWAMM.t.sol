@@ -324,7 +324,7 @@ contract TWAMMTest is Test, Fixtures {
         token0.approve(address(twammHook), 100e18);
         vm.warp(20000);
 
-        vm.expectRevert(abi.encodeWithSelector(ITWAMM.ExpirationLessThanBlocktime.selector, block.timestamp));
+        vm.expectRevert(abi.encodeWithSelector(ITWAMM.ExpirationLessThanBlockTime.selector, block.timestamp));
 
         twammHook.submitOrder(ITWAMM.SubmitOrderParams({key: key, zeroForOne: true, duration: 0, amountIn: 1e18}));
     }

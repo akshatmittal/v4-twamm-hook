@@ -28,7 +28,7 @@ interface ITWAMM {
 
     /// @notice Thrown when trying to submit an order with an expiration time in the past.
     /// @param expiration The expiration timestamp of the order
-    error ExpirationLessThanBlocktime(uint256 expiration);
+    error ExpirationLessThanBlockTime(uint256 expiration);
 
     /// @notice Thrown when trying to submit an order without initializing TWAMM state first
     error NotInitialized();
