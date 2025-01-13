@@ -29,8 +29,6 @@ import {PoolGetters} from "@lib/PoolGetters.sol";
 import {OrderPool} from "@lib/OrderPool.sol";
 import {TransferHelper} from "@lib/TransferHelper.sol";
 
-import "forge-std/console2.sol";
-
 contract TWAMM is BaseHook, Owned, ITWAMM {
     using TransferHelper for IERC20Minimal;
     using CurrencySettler for Currency;
