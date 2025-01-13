@@ -128,7 +128,8 @@ contract TWAMM is BaseHook, Owned, ITWAMM {
         IPoolManager.ModifyLiquidityParams calldata,
         bytes calldata
     ) external override onlyPoolManager returns (bytes4) {
-        executeTWAMMOrders(key);
+        // Liquidity removal must always be unblocked.
+        try this.executeTWAMMOrders(key) {} catch {}
 
         return BaseHook.beforeRemoveLiquidity.selector;
     }
