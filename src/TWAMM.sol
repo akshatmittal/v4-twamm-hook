@@ -210,13 +210,20 @@ contract TWAMM is BaseHook, ITWAMM {
         orderKeys = new OrderKey[](orders.length);
 
         for (uint256 i = 0; i < orders.length; i++) {
-            (orderIds[i], orderKeys[i]) = submitOrder(orders[i]);
+            (orderIds[i], orderKeys[i]) = _submitOrder(orders[i]);
         }
     }
 
     /// @inheritdoc ITWAMM
     function submitOrder(SubmitOrderParams calldata params)
-        public
+        external
+        returns (bytes32 orderId, OrderKey memory orderKey)
+    {
+        return _submitOrder(params);
+    }
+
+    function _submitOrder(SubmitOrderParams calldata params)
+        internal
         returns (bytes32 orderId, OrderKey memory orderKey)
     {
         PoolKey calldata key = params.key;
@@ -229,61 +236,47 @@ contract TWAMM is BaseHook, ITWAMM {
         PoolId poolId = key.toId();
         uint256 currentTimestampAtInterval = _getIntervalTime(block.timestamp);
         orderKey = OrderKey(msg.sender, (currentTimestampAtInterval + duration).toUint160(), zeroForOne);
+
         TWAMMState storage twamm = twammStates[poolId];
 
         if (orderKey.expiration <= block.timestamp) {
             revert ExpirationLessThanBlocktime(orderKey.expiration);
         }
-
-        unchecked {
-            // checks done in TWAMM library
-            uint256 sellRate = amountIn / duration;
-
-            uint256 earningsFactorLast;
-            (orderId, earningsFactorLast) = _submitOrder(twamm, orderKey, sellRate);
-
-            IERC20Minimal(orderKey.zeroForOne ? Currency.unwrap(key.currency0) : Currency.unwrap(key.currency1))
-                .safeTransferFrom(msg.sender, address(this), sellRate * duration);
-
-            emit SubmitOrder(
-                poolId,
-                orderId,
-                orderKey.owner,
-                amountIn,
-                orderKey.expiration,
-                orderKey.zeroForOne,
-                sellRate,
-                earningsFactorLast
-            );
-        }
-    }
-
-    /// @notice Submits a new long term order into the TWAMM
-    /// @dev executeTWAMMOrders must be executed up to current timestamp before calling submitOrder
-    /// @param orderKey The OrderKey for the new order
-    function _submitOrder(TWAMMState storage self, OrderKey memory orderKey, uint256 sellRate)
-        internal
-        returns (bytes32 orderId, uint256 earningsFactorLast)
-    {
-        if (sellRate == 0) {
-            revert SellRateCannotBeZero();
-        }
         if (orderKey.expiration % expirationInterval != 0) {
             revert ExpirationNotOnInterval(orderKey.expiration);
         }
 
-        orderId = _orderId(orderKey);
-        if (self.orders[orderId].sellRate != 0) {
-            revert OrderAlreadyExists(orderKey);
+        unchecked {
+            // checks done in TWAMM library
+            uint256 sellRate = amountIn / duration;
+            if (sellRate == 0) {
+                revert SellRateCannotBeZero();
+            }
+
+            orderId = _orderId(orderKey);
+
+            if (twamm.orders[orderId].sellRate != 0) {
+                revert OrderAlreadyExists(orderKey);
+            }
+
+            OrderPool.State storage orderPool = zeroForOne ? twamm.orderPool0For1 : twamm.orderPool1For0;
+
+            orderPool.sellRateCurrent += sellRate;
+            orderPool.sellRateEndingAtInterval[orderKey.expiration] += sellRate;
+
+            uint256 earningsFactorLast = orderPool.earningsFactorCurrent;
+            twamm.orders[orderId] = Order({sellRate: sellRate, earningsFactorLast: earningsFactorLast});
+
+            IERC20Minimal(zeroForOne ? Currency.unwrap(key.currency0) : Currency.unwrap(key.currency1)).safeTransferFrom(
+                msg.sender, address(this), sellRate * duration
+            );
+
+            emit SubmitOrder(
+                poolId, orderId, orderKey.owner, amountIn, orderKey.expiration, zeroForOne, sellRate, earningsFactorLast
+            );
         }
 
-        OrderPool.State storage orderPool = orderKey.zeroForOne ? self.orderPool0For1 : self.orderPool1For0;
-
-        orderPool.sellRateCurrent += sellRate;
-        orderPool.sellRateEndingAtInterval[orderKey.expiration] += sellRate;
-
-        earningsFactorLast = orderPool.earningsFactorCurrent;
-        self.orders[orderId] = Order({sellRate: sellRate, earningsFactorLast: earningsFactorLast});
+        return (orderId, orderKey);
     }
 
     /// @inheritdoc ITWAMM
