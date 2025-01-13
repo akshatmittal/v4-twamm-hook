@@ -119,8 +119,11 @@ contract TWAMMTest is Test, Fixtures {
         assertEq(nullOrder.earningsFactorLast, 0);
 
         vm.warp(10000);
+
         token0.approve(address(twammHook), 100 ether);
-        twammHook.submitOrder(key, true, 20000, 1 ether);
+        twammHook.submitOrder(
+            ITWAMM.SubmitOrderParams({key: key, zeroForOne: true, duration: 20000, amountIn: 1 ether})
+        );
 
         ITWAMM.Order memory submittedOrder = twammHook.getOrder(key, orderKey);
         (uint256 sellRateCurrent0For1, uint256 earningsFactorCurrent0For1) = twammHook.getOrderPool(key, true);
@@ -143,7 +146,7 @@ contract TWAMMTest is Test, Fixtures {
         // set timestamp to halfway through the order
         vm.warp(20000);
 
-        twammHook.sync(key, orderKey2, true);
+        twammHook.sync(ITWAMM.SyncParams({key: key, orderKey: orderKey2, removeRemaining: true}));
 
         uint256 token0Owed = twammHook.tokensOwed(key.currency0, orderKey1.owner);
         uint256 token1Owed = twammHook.tokensOwed(key.currency1, orderKey1.owner);
@@ -161,7 +164,8 @@ contract TWAMMTest is Test, Fixtures {
         // set timestamp to halfway through the order
         vm.warp(20000);
 
-        twammHook.sync(key, orderKey1, true);
+        twammHook.sync(ITWAMM.SyncParams({key: key, orderKey: orderKey1, removeRemaining: true}));
+
         ITWAMM.Order memory deletedOrder = twammHook.getOrder(key, orderKey1);
         uint256 token0Owed = twammHook.tokensOwed(key.currency0, orderKey1.owner);
         uint256 token1Owed = twammHook.tokensOwed(key.currency1, orderKey1.owner);
@@ -181,7 +185,8 @@ contract TWAMMTest is Test, Fixtures {
         // set timestamp to halfway through the order
         vm.warp(20000);
 
-        twammHook.sync(key, orderKey2, true);
+        twammHook.sync(ITWAMM.SyncParams({key: key, orderKey: orderKey2, removeRemaining: true}));
+
         ITWAMM.Order memory deletedOrder = twammHook.getOrder(key, orderKey2);
         uint256 token0Owed = twammHook.tokensOwed(key.currency0, orderKey2.owner);
         uint256 token1Owed = twammHook.tokensOwed(key.currency1, orderKey2.owner);
@@ -204,12 +209,20 @@ contract TWAMMTest is Test, Fixtures {
         );
 
         vm.warp(10000);
-        twammHook.submitOrder(key, true, 20000, orderAmount);
-        twammHook.submitOrder(key, false, 20000, orderAmount);
+
+        twammHook.submitOrder(
+            ITWAMM.SubmitOrderParams({key: key, zeroForOne: true, duration: 20000, amountIn: orderAmount})
+        );
+
+        twammHook.submitOrder(
+            ITWAMM.SubmitOrderParams({key: key, zeroForOne: false, duration: 20000, amountIn: orderAmount})
+        );
+
         vm.warp(20000);
         twammHook.executeTWAMMOrders(key);
-        twammHook.sync(key, orderKey1, false);
-        twammHook.sync(key, orderKey2, false);
+
+        twammHook.sync(ITWAMM.SyncParams({key: key, orderKey: orderKey1, removeRemaining: false}));
+        twammHook.sync(ITWAMM.SyncParams({key: key, orderKey: orderKey2, removeRemaining: false}));
 
         uint256 earningsToken0 = twammHook.tokensOwed(key.currency0, address(this));
         uint256 earningsToken1 = twammHook.tokensOwed(key.currency1, address(this));
@@ -224,9 +237,11 @@ contract TWAMMTest is Test, Fixtures {
 
         vm.warp(30000);
         twammHook.executeTWAMMOrders(key);
-        twammHook.sync(key, orderKey1, false);
-        twammHook.sync(key, orderKey2, false);
-        twammHook.claimTokens(key);
+
+        twammHook.sync(ITWAMM.SyncParams({key: key, orderKey: orderKey1, removeRemaining: false}));
+        twammHook.sync(ITWAMM.SyncParams({key: key, orderKey: orderKey2, removeRemaining: false}));
+
+        twammHook.claimTokensByPoolKey(key);
 
         assertEq(twammHook.tokensOwed(key.currency0, address(this)), 0);
         assertEq(twammHook.tokensOwed(key.currency1, address(this)), 0);
@@ -245,14 +260,19 @@ contract TWAMMTest is Test, Fixtures {
     }
 
     function testTWAMM_submitOrder_singleSell_zeroForOne_sellRateAndEarningsFactorGetsUpdatedProperly() public {
-        ITWAMM.OrderKey memory orderKey1 = ITWAMM.OrderKey(address(this), 30000, true);
+        /* ITWAMM.OrderKey memory orderKey1 = */
+        ITWAMM.OrderKey(address(this), 30000, true);
         ITWAMM.OrderKey memory orderKey2 = ITWAMM.OrderKey(address(this), 40000, true);
 
         token0.approve(address(twammHook), 100e18);
         vm.warp(10000);
-        twammHook.submitOrder(key, true, 20000, 1e18);
+
+        twammHook.submitOrder(ITWAMM.SubmitOrderParams({key: key, zeroForOne: true, duration: 20000, amountIn: 1e18}));
+
         vm.warp(30000);
-        twammHook.submitOrder(key, true, 10000, 1e18);
+
+        twammHook.submitOrder(ITWAMM.SubmitOrderParams({key: key, zeroForOne: true, duration: 10000, amountIn: 1e18}));
+
         vm.warp(40000);
 
         ITWAMM.Order memory submittedOrder = twammHook.getOrder(key, orderKey2);
@@ -262,14 +282,19 @@ contract TWAMMTest is Test, Fixtures {
     }
 
     function testTWAMM_submitOrder_singleSell_OneForZero_sellRateAndEarningsFactorGetsUpdatedProperly() public {
-        ITWAMM.OrderKey memory orderKey1 = ITWAMM.OrderKey(address(this), 30000, false);
+        /* ITWAMM.OrderKey memory orderKey1 = */
+        ITWAMM.OrderKey(address(this), 30000, false);
         ITWAMM.OrderKey memory orderKey2 = ITWAMM.OrderKey(address(this), 40000, false);
 
         token1.approve(address(twammHook), 100e18);
         vm.warp(10000);
-        twammHook.submitOrder(key, false, 20000, 1e18);
+
+        twammHook.submitOrder(ITWAMM.SubmitOrderParams({key: key, zeroForOne: false, duration: 20000, amountIn: 1e18}));
+
         vm.warp(30000);
-        twammHook.submitOrder(key, false, 10000, 1e18);
+
+        twammHook.submitOrder(ITWAMM.SubmitOrderParams({key: key, zeroForOne: false, duration: 10000, amountIn: 1e18}));
+
         vm.warp(40000);
 
         ITWAMM.Order memory submittedOrder = twammHook.getOrder(key, orderKey2);
@@ -279,7 +304,8 @@ contract TWAMMTest is Test, Fixtures {
     }
 
     function testTWAMM_submitOrder_revertsIfPoolNotInitialized() public {
-        ITWAMM.OrderKey memory orderKey1 = ITWAMM.OrderKey(address(this), 30000, true);
+        /* ITWAMM.OrderKey memory orderKey1 = */
+        ITWAMM.OrderKey(address(this), 30000, true);
         PoolKey memory invalidPoolKey = key;
         invalidPoolKey.fee = 1000;
 
@@ -287,16 +313,20 @@ contract TWAMMTest is Test, Fixtures {
         vm.warp(10000);
 
         vm.expectRevert(ITWAMM.NotInitialized.selector);
-        twammHook.submitOrder(invalidPoolKey, true, 30000, 1e18);
+
+        twammHook.submitOrder(
+            ITWAMM.SubmitOrderParams({key: invalidPoolKey, zeroForOne: true, duration: 30000, amountIn: 1e18})
+        );
     }
 
     function testTWAMM_submitOrder_revertsIfExpiryInThePast() public {
-        uint160 prevTimestamp = 10000;
+        /* uint160 prevTimestamp = 10000; */
         token0.approve(address(twammHook), 100e18);
         vm.warp(20000);
 
-        vm.expectRevert(abi.encodeWithSelector(ITWAMM.ExpirationLessThanBlocktime.selector, block.timestamp));
-        twammHook.submitOrder(key, true, 0, 1e18);
+        vm.expectRevert(abi.encodeWithSelector(ITWAMM.ExpirationLessThanBlockTime.selector, block.timestamp));
+
+        twammHook.submitOrder(ITWAMM.SubmitOrderParams({key: key, zeroForOne: true, duration: 0, amountIn: 1e18}));
     }
 
     function testTWAMM_syncOrder_updatesTokensOwedIfCalledAfterExpirationWithNoDelta() public {
@@ -308,7 +338,8 @@ contract TWAMMTest is Test, Fixtures {
         // set timestamp to halfway through the order
         vm.warp(orderKey2.expiration + 10);
 
-        twammHook.sync(key, orderKey2, false);
+        twammHook.sync(ITWAMM.SyncParams({key: key, orderKey: orderKey2, removeRemaining: false}));
+
         (uint256 updatedSellRate,) = twammHook.getOrderPool(key, false);
         ITWAMM.Order memory deletedOrder = twammHook.getOrder(key, orderKey2);
 
@@ -324,16 +355,22 @@ contract TWAMMTest is Test, Fixtures {
     }
 
     function testTWAMM_executeTWAMMOrders_OneIntervalGas() public {
-        ITWAMM.OrderKey memory orderKey1 = ITWAMM.OrderKey(address(this), 30000, true);
-        ITWAMM.OrderKey memory orderKey2 = ITWAMM.OrderKey(address(this), 30000, false);
+        /* ITWAMM.OrderKey memory orderKey1 = */
+        ITWAMM.OrderKey(address(this), 30000, true);
+        /* ITWAMM.OrderKey memory orderKey2 = */
+        ITWAMM.OrderKey(address(this), 30000, false);
 
         token0.approve(address(twammHook), 100 ether);
         token1.approve(address(twammHook), 100 ether);
 
         vm.warp(10000);
 
-        twammHook.submitOrder(key, true, 20000, 1 ether);
-        twammHook.submitOrder(key, false, 20000, 5 ether);
+        twammHook.submitOrder(
+            ITWAMM.SubmitOrderParams({key: key, zeroForOne: true, duration: 20000, amountIn: 1 ether})
+        );
+        twammHook.submitOrder(
+            ITWAMM.SubmitOrderParams({key: key, zeroForOne: false, duration: 20000, amountIn: 5 ether})
+        );
 
         vm.warp(60000);
         twammHook.executeTWAMMOrders(key);
@@ -345,10 +382,18 @@ contract TWAMMTest is Test, Fixtures {
 
         vm.warp(10000);
 
-        twammHook.submitOrder(key, true, 20000, 1 ether);
-        twammHook.submitOrder(key, false, 20000, 5 ether);
-        twammHook.submitOrder(key, true, 30000, 2 ether);
-        twammHook.submitOrder(key, false, 30000, 2 ether);
+        twammHook.submitOrder(
+            ITWAMM.SubmitOrderParams({key: key, zeroForOne: true, duration: 20000, amountIn: 1 ether})
+        );
+        twammHook.submitOrder(
+            ITWAMM.SubmitOrderParams({key: key, zeroForOne: false, duration: 20000, amountIn: 5 ether})
+        );
+        twammHook.submitOrder(
+            ITWAMM.SubmitOrderParams({key: key, zeroForOne: true, duration: 30000, amountIn: 2 ether})
+        );
+        twammHook.submitOrder(
+            ITWAMM.SubmitOrderParams({key: key, zeroForOne: false, duration: 30000, amountIn: 2 ether})
+        );
 
         vm.warp(60000);
         twammHook.executeTWAMMOrders(key);
@@ -359,22 +404,30 @@ contract TWAMMTest is Test, Fixtures {
 
         vm.warp(10000);
 
-        twammHook.submitOrder(key, true, 20000, 1 ether);
+        twammHook.submitOrder(
+            ITWAMM.SubmitOrderParams({key: key, zeroForOne: true, duration: 20000, amountIn: 1 ether})
+        );
 
         vm.warp(30000);
         twammHook.executeTWAMMOrders(key);
     }
 
     function testTWAMM_executeTWAMMOrders_SinglePoolSell_twoIntervalsGas() public {
-        ITWAMM.OrderKey memory orderKey1 = ITWAMM.OrderKey(address(this), 30000, true);
-        ITWAMM.OrderKey memory orderKey2 = ITWAMM.OrderKey(address(this), 40000, true);
+        /* ITWAMM.OrderKey memory orderKey1 = */
+        ITWAMM.OrderKey(address(this), 30000, true);
+        /* ITWAMM.OrderKey memory orderKey2 = */
+        ITWAMM.OrderKey(address(this), 40000, true);
 
         token0.approve(address(twammHook), 100 ether);
 
         vm.warp(10000);
 
-        twammHook.submitOrder(key, true, 20000, 1 ether);
-        twammHook.submitOrder(key, true, 30000, 5 ether);
+        twammHook.submitOrder(
+            ITWAMM.SubmitOrderParams({key: key, zeroForOne: true, duration: 20000, amountIn: 1 ether})
+        );
+        twammHook.submitOrder(
+            ITWAMM.SubmitOrderParams({key: key, zeroForOne: true, duration: 30000, amountIn: 5 ether})
+        );
 
         vm.warp(60000);
         twammHook.executeTWAMMOrders(key);
@@ -390,7 +443,12 @@ contract TWAMMTest is Test, Fixtures {
         token1.approve(address(twammHook), amount);
 
         vm.warp(10000);
-        (, key1) = twammHook.submitOrder(key, true, 20000, amount);
-        (, key2) = twammHook.submitOrder(key, false, 20000, amount);
+
+        (, key1) = twammHook.submitOrder(
+            ITWAMM.SubmitOrderParams({key: key, zeroForOne: true, duration: 20000, amountIn: amount})
+        );
+        (, key2) = twammHook.submitOrder(
+            ITWAMM.SubmitOrderParams({key: key, zeroForOne: false, duration: 20000, amountIn: amount})
+        );
     }
 }

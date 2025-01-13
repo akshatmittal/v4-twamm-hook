@@ -139,7 +139,8 @@ contract TWAMMUnevenTest is Test, Fixtures {
 
     function _updateOrderAndClaim(ITWAMM.OrderKey memory oKey) internal {
         vm.startPrank(oKey.owner);
-        twammHook.syncAndClaimTokens(key, oKey, false);
+        twammHook.syncAndClaimTokens(ITWAMM.SyncParams({key: key, orderKey: oKey, removeRemaining: false}));
+
         vm.stopPrank();
     }
 
@@ -160,7 +161,9 @@ contract TWAMMUnevenTest is Test, Fixtures {
             token1.approve(address(twammHook), amount);
         }
 
-        (, oKey) = twammHook.submitOrder(key, zeroForOne, duration, amount);
+        (, oKey) = twammHook.submitOrder(
+            ITWAMM.SubmitOrderParams({key: key, zeroForOne: zeroForOne, duration: duration, amountIn: amount})
+        );
         vm.stopPrank();
     }
 
@@ -173,6 +176,8 @@ contract TWAMMUnevenTest is Test, Fixtures {
         token0.approve(address(twammHook), amount);
         token1.approve(address(twammHook), amount);
 
-        twammHook.submitOrder(key, zeroForOne, duration, amount);
+        twammHook.submitOrder(
+            ITWAMM.SubmitOrderParams({key: key, zeroForOne: zeroForOne, duration: duration, amountIn: amount})
+        );
     }
 }

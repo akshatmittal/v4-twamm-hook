@@ -115,7 +115,8 @@ contract TWAMMFlowTest is Test, Fixtures {
         uint256 balance1After;
 
         (balance0Before, balance1Before) = (key.currency0.balanceOfSelf(), key.currency1.balanceOfSelf());
-        twammHook.syncAndClaimTokens(key, oKey, false);
+        twammHook.syncAndClaimTokens(ITWAMM.SyncParams({key: key, orderKey: oKey, removeRemaining: false}));
+
         (balance0After, balance1After) = (key.currency0.balanceOfSelf(), key.currency1.balanceOfSelf());
 
         assertEq(balance0After - balance0Before, 0); // It's a zeroForOne trade
@@ -128,7 +129,7 @@ contract TWAMMFlowTest is Test, Fixtures {
         swap(key, true, -int256(0.0001 ether), ZERO_BYTES);
 
         (balance0Before, balance1Before) = (key.currency0.balanceOfSelf(), key.currency1.balanceOfSelf());
-        twammHook.syncAndClaimTokens(key, oKey, false);
+        twammHook.syncAndClaimTokens(ITWAMM.SyncParams({key: key, orderKey: oKey, removeRemaining: false}));
         (balance0After, balance1After) = (key.currency0.balanceOfSelf(), key.currency1.balanceOfSelf());
 
         assertEq(balance0After - balance0Before, 0); // It's a zeroForOne trade
@@ -140,7 +141,7 @@ contract TWAMMFlowTest is Test, Fixtures {
         uint256 orderDuration = 20_000;
 
         vm.warp(10_000);
-        ITWAMM.OrderKey memory oKey = _submitOrderSingleDirection(true, 1 ether, orderDuration);
+        _submitOrderSingleDirection(true, 1 ether, orderDuration);
 
         (uint256 sellRateCurrent,) = twammHook.getOrderPool(key, true);
 
@@ -190,10 +191,11 @@ contract TWAMMFlowTest is Test, Fixtures {
         console2.log(token0.balanceOf(address(twammHook)));
         console2.log(token1.balanceOf(address(twammHook)));
 
-        twammHook.sync(key, oKey1, false);
-        twammHook.sync(key, oKey2, false);
+        twammHook.sync(ITWAMM.SyncParams({key: key, orderKey: oKey1, removeRemaining: false}));
 
-        twammHook.claimTokens(key);
+        twammHook.sync(ITWAMM.SyncParams({key: key, orderKey: oKey2, removeRemaining: false}));
+
+        twammHook.claimTokensByPoolKey(key);
     }
 
     function testTWAMM_updatedOrder_CalculateTokensOwedAfterExpiration() public {
@@ -206,14 +208,21 @@ contract TWAMMFlowTest is Test, Fixtures {
         token1.approve(address(twammHook), type(uint256).max);
 
         vm.warp(10000);
-        twammHook.submitOrder(key, true, 10000, orderAmount);
-        twammHook.submitOrder(key, false, 10000, orderAmount);
-        ITWAMM.OrderKey memory orderKey3 = _submitOrderAs(address(0xA2), true, orderAmount * 2, 50000);
-        ITWAMM.OrderKey memory orderKey4 = _submitOrderAs(address(0xA2), false, orderAmount * 2, 50000);
+        twammHook.submitOrder(
+            ITWAMM.SubmitOrderParams({key: key, zeroForOne: true, duration: 10000, amountIn: orderAmount})
+        );
+
+        twammHook.submitOrder(
+            ITWAMM.SubmitOrderParams({key: key, zeroForOne: false, duration: 10000, amountIn: orderAmount})
+        );
+
+        _submitOrderAs(address(0xA2), true, orderAmount * 2, 50000);
+        _submitOrderAs(address(0xA2), false, orderAmount * 2, 50000);
 
         vm.warp(40000);
-        twammHook.sync(key, orderKey1, false);
-        twammHook.sync(key, orderKey2, false);
+        twammHook.sync(ITWAMM.SyncParams({key: key, orderKey: orderKey1, removeRemaining: false}));
+
+        twammHook.sync(ITWAMM.SyncParams({key: key, orderKey: orderKey2, removeRemaining: false}));
 
         uint256 token0Owed = twammHook.tokensOwed(key.currency0, orderKey2.owner);
         uint256 token1Owed = twammHook.tokensOwed(key.currency1, orderKey2.owner);
@@ -235,7 +244,9 @@ contract TWAMMFlowTest is Test, Fixtures {
 
         oKey = ITWAMM.OrderKey(owner, uint160(block.timestamp) + duration, zeroForOne);
 
-        twammHook.submitOrder(key, zeroForOne, duration, amount);
+        twammHook.submitOrder(
+            ITWAMM.SubmitOrderParams({key: key, zeroForOne: zeroForOne, duration: duration, amountIn: amount})
+        );
         vm.stopPrank();
     }
 
@@ -248,6 +259,8 @@ contract TWAMMFlowTest is Test, Fixtures {
         token0.approve(address(twammHook), amount);
         token1.approve(address(twammHook), amount);
 
-        twammHook.submitOrder(key, zeroForOne, duration, amount);
+        twammHook.submitOrder(
+            ITWAMM.SubmitOrderParams({key: key, zeroForOne: zeroForOne, duration: duration, amountIn: amount})
+        );
     }
 }
