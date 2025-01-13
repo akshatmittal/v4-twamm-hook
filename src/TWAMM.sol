@@ -60,7 +60,7 @@ contract TWAMM is BaseHook, ITWAMM {
             beforeInitialize: true,
             afterInitialize: false,
             beforeAddLiquidity: true,
-            beforeRemoveLiquidity: true,
+            beforeRemoveLiquidity: false,
             afterAddLiquidity: false,
             afterRemoveLiquidity: false,
             beforeSwap: true,
@@ -100,17 +100,6 @@ contract TWAMM is BaseHook, ITWAMM {
         executeTWAMMOrders(key);
 
         return BaseHook.beforeAddLiquidity.selector;
-    }
-
-    function beforeRemoveLiquidity(
-        address,
-        PoolKey calldata key,
-        IPoolManager.ModifyLiquidityParams calldata,
-        bytes calldata
-    ) external override onlyPoolManager returns (bytes4) {
-        executeTWAMMOrders(key);
-
-        return BaseHook.beforeRemoveLiquidity.selector;
     }
 
     function beforeSwap(address, PoolKey calldata key, IPoolManager.SwapParams calldata, bytes calldata)
