@@ -115,7 +115,7 @@ contract TWAMMFlowTest is Test, Fixtures {
         uint256 balance1After;
 
         (balance0Before, balance1Before) = (key.currency0.balanceOfSelf(), key.currency1.balanceOfSelf());
-        twammHook.syncAndClaimTokens(key, oKey);
+        twammHook.syncAndClaimTokens(key, oKey, false);
         (balance0After, balance1After) = (key.currency0.balanceOfSelf(), key.currency1.balanceOfSelf());
 
         assertEq(balance0After - balance0Before, 0); // It's a zeroForOne trade
@@ -128,7 +128,7 @@ contract TWAMMFlowTest is Test, Fixtures {
         swap(key, true, -int256(0.0001 ether), ZERO_BYTES);
 
         (balance0Before, balance1Before) = (key.currency0.balanceOfSelf(), key.currency1.balanceOfSelf());
-        twammHook.syncAndClaimTokens(key, oKey);
+        twammHook.syncAndClaimTokens(key, oKey, false);
         (balance0After, balance1After) = (key.currency0.balanceOfSelf(), key.currency1.balanceOfSelf());
 
         assertEq(balance0After - balance0Before, 0); // It's a zeroForOne trade

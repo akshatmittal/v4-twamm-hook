@@ -139,7 +139,7 @@ contract TWAMMUnevenTest is Test, Fixtures {
 
     function _updateOrderAndClaim(ITWAMM.OrderKey memory oKey) internal {
         vm.startPrank(oKey.owner);
-        twammHook.syncAndClaimTokens(key, oKey);
+        twammHook.syncAndClaimTokens(key, oKey, false);
         vm.stopPrank();
     }
 
