@@ -51,7 +51,7 @@ contract TWAMMComplexTest is Test, Fixtures {
 
         vm.warp(TWAMM_INTERVAL);
 
-        bytes memory constructorArgs = abi.encode(manager, TWAMM_INTERVAL); // Uses 30 mins
+        bytes memory constructorArgs = abi.encode(manager, TWAMM_INTERVAL, address(123)); // Uses 30 mins
         deployCodeTo("TWAMM.sol:TWAMM", constructorArgs, flags);
         twammHook = TWAMM(flags);
 

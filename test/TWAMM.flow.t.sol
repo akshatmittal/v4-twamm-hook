@@ -49,7 +49,7 @@ contract TWAMMFlowTest is Test, Fixtures {
 
         vm.warp(10_000);
 
-        bytes memory constructorArgs = abi.encode(manager, uint256(10_000));
+        bytes memory constructorArgs = abi.encode(manager, uint256(10_000), address(123));
         deployCodeTo("TWAMM.sol:TWAMM", constructorArgs, flags);
         twammHook = TWAMM(flags);
 

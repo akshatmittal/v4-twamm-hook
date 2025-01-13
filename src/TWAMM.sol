@@ -21,6 +21,7 @@ import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
 import {TransientStateLibrary} from "@uniswap/v4-core/src/libraries/TransientStateLibrary.sol";
 import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "@uniswap/v4-core/src/types/BeforeSwapDelta.sol";
 import {LiquidityMath} from "@uniswap/v4-core/src/libraries/LiquidityMath.sol";
+import {Owned} from "solmate/src/auth/Owned.sol";
 
 import {ITWAMM} from "@src/ITWAMM.sol";
 
@@ -28,7 +29,9 @@ import {PoolGetters} from "@lib/PoolGetters.sol";
 import {OrderPool} from "@lib/OrderPool.sol";
 import {TransferHelper} from "@lib/TransferHelper.sol";
 
-contract TWAMM is BaseHook, ITWAMM {
+import "forge-std/console2.sol";
+
+contract TWAMM is BaseHook, Owned, ITWAMM {
     using TransferHelper for IERC20Minimal;
     using CurrencySettler for Currency;
     using OrderPool for OrderPool.State;
@@ -49,11 +52,26 @@ contract TWAMM is BaseHook, ITWAMM {
     mapping(PoolId poolId => TWAMMState twammState) internal twammStates;
     mapping(Currency token => mapping(address owner => uint256 amountOwed)) public tokensOwed;
 
-    constructor(IPoolManager _manager, uint256 _expirationInterval) BaseHook(_manager) {
+    /// @notice If true, the hook has been killed and can no longer be used to create TWAMM orders.
+    ///         Swaps & Liquidity Actions will continue to operate normally.
+    uint256 public killedAt;
+
+    constructor(IPoolManager _manager, uint256 _expirationInterval, address initialOwner)
+        BaseHook(_manager)
+        Owned(initialOwner)
+    {
         if (_expirationInterval == 0) {
             revert InvalidExpirationInterval();
         }
         expirationInterval = _expirationInterval;
+    }
+
+    function killHook() external onlyOwner {
+        if (killedAt != 0) {
+            revert HookKilled();
+        }
+
+        killedAt = block.timestamp;
     }
 
     /// @inheritdoc BaseHook
@@ -147,6 +165,11 @@ contract TWAMM is BaseHook, ITWAMM {
 
     /// @inheritdoc ITWAMM
     function executeTWAMMOrders(PoolKey memory key, uint256 targetTimestamp) public {
+        if (killedAt != 0) {
+            // If the hook has been killed, skip all hook logic.
+            return;
+        }
+
         PoolId poolId = key.toId();
         TWAMMState storage twamm = twammStates[poolId];
 
@@ -213,6 +236,11 @@ contract TWAMM is BaseHook, ITWAMM {
         internal
         returns (bytes32 orderId, OrderKey memory orderKey)
     {
+        if (killedAt != 0) {
+            // If the hook has been killed, do not allow new orders.
+            revert HookKilled();
+        }
+
         executeTWAMMOrders(params.key);
 
         PoolId poolId = params.key.toId();
@@ -333,7 +361,7 @@ contract TWAMM is BaseHook, ITWAMM {
         Order storage order = _getOrder(twamm, orderId);
 
         OrderPool.State storage orderPool = orderKey.zeroForOne ? twamm.orderPool0For1 : twamm.orderPool1For0;
-        bool isOrderExpired = orderKey.expiration <= block.timestamp;
+        bool isOrderExpired = orderKey.expiration <= twamm.lastVirtualOrderTimestamp;
 
         if (order.sellRate == 0) {
             revert OrderDoesNotExist(orderKey);
@@ -350,7 +378,8 @@ contract TWAMM is BaseHook, ITWAMM {
         }
 
         if (removeRemaining && !isOrderExpired && orderKey.owner == msg.sender) {
-            uint256 durationDelta = orderKey.expiration - _getIntervalTime(block.timestamp);
+            uint256 durationDelta = orderKey.expiration
+                - (killedAt == 0 ? _getIntervalTime(block.timestamp) : twamm.lastVirtualOrderTimestamp);
             sellTokensOwed = order.sellRate * durationDelta;
 
             delete twamm.orders[orderId];

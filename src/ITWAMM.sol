@@ -44,6 +44,9 @@ interface ITWAMM {
     /// @notice Thrown when submitting an order with a sellRate of 0
     error SellRateCannotBeZero();
 
+    /// @notice Thrown when hook has been killed.
+    error HookKilled();
+
     /// @notice Information associated with a long term order
     /// @member sellRate Amount of tokens sold per interval
     /// @member earningsFactorLast The accrued earnings factor from which to start claiming owed earnings for this order
