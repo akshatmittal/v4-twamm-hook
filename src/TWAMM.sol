@@ -61,9 +61,11 @@ contract TWAMM is BaseHook, Owned, ITWAMM {
         if (_expirationInterval == 0) {
             revert InvalidExpirationInterval();
         }
+
         expirationInterval = _expirationInterval;
     }
 
+    /// @inheritdoc ITWAMM
     function killHook() external onlyOwner {
         if (killedAt != 0) {
             revert HookKilled();
@@ -307,6 +309,24 @@ contract TWAMM is BaseHook, Owned, ITWAMM {
     }
 
     /// @inheritdoc ITWAMM
+    function claimTokensByPoolKey(PoolKey calldata key)
+        public
+        returns (uint256 tokens0Claimed, uint256 tokens1Claimed)
+    {
+        tokens0Claimed = _claimTokens(key.currency0);
+        tokens1Claimed = _claimTokens(key.currency1);
+    }
+
+    /// @inheritdoc ITWAMM
+    function claimTokensByCurrencies(Currency[] calldata currencies) public returns (uint256[] memory tokensClaimed) {
+        tokensClaimed = new uint256[](currencies.length);
+
+        for (uint256 i = 0; i < currencies.length; i++) {
+            tokensClaimed[i] = _claimTokens(currencies[i]);
+        }
+    }
+
+    /// @inheritdoc ITWAMM
     function syncAndClaimTokens(SyncParams calldata params)
         external
         returns (uint256 tokens0Claimed, uint256 tokens1Claimed)
@@ -318,19 +338,16 @@ contract TWAMM is BaseHook, Owned, ITWAMM {
     }
 
     /// @inheritdoc ITWAMM
-    function batchSyncAndClaimTokens(SyncParams[] calldata params)
+    function batchSyncAndClaimTokens(SyncParams[] calldata params, Currency[] calldata currencies)
         external
-        returns (uint256[] memory tokens0Claimed, uint256[] memory tokens1Claimed)
+        returns (uint256[] memory)
     {
-        tokens0Claimed = new uint256[](params.length);
-        tokens1Claimed = new uint256[](params.length);
-
         for (uint256 i = 0; i < params.length; i++) {
             // Calls executeTWAMMOrders
             sync(params[i]);
-
-            (tokens0Claimed[i], tokens1Claimed[i]) = claimTokensByPoolKey(params[i].key);
         }
+
+        return claimTokensByCurrencies(currencies);
     }
 
     /// @inheritdoc ITWAMM
@@ -393,27 +410,6 @@ contract TWAMM is BaseHook, Owned, ITWAMM {
             sellTokensOwed = order.sellRate * durationDelta;
 
             delete twamm.orders[orderId];
-        }
-    }
-
-    /// @inheritdoc ITWAMM
-    function claimTokensByPoolKey(PoolKey calldata key)
-        public
-        returns (uint256 tokens0Claimed, uint256 tokens1Claimed)
-    {
-        tokens0Claimed = _claimTokens(key.currency0);
-        tokens1Claimed = _claimTokens(key.currency1);
-    }
-
-    /// @inheritdoc ITWAMM
-    function claimTokensByCurrencies(Currency[] calldata currencies)
-        external
-        returns (uint256[] memory tokensClaimed)
-    {
-        tokensClaimed = new uint256[](currencies.length);
-
-        for (uint256 i = 0; i < currencies.length; i++) {
-            tokensClaimed[i] = _claimTokens(currencies[i]);
         }
     }
 

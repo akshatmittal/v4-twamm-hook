@@ -4,7 +4,7 @@ pragma solidity ^0.8.26;
 import {TWAMM, IPoolManager, PoolId, PoolKey} from "@src/TWAMM.sol";
 
 contract TWAMMExtended is TWAMM {
-    constructor(IPoolManager _manager, uint256 _exp) TWAMM(_manager, _exp, address(0)) {}
+    constructor(IPoolManager _manager, uint256 _exp, address initialOwner) TWAMM(_manager, _exp, initialOwner) {}
 
     function getOrderPoolEarningsFactorAtInterval(PoolId id, bool zeroForOne, uint256 timestamp)
         external
