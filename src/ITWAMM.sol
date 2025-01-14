@@ -44,6 +44,9 @@ interface ITWAMM {
     /// @notice Thrown when submitting an order with a sellRate of 0
     error SellRateCannotBeZero();
 
+    /// @notice Thrown when hook has been killed.
+    error HookKilled();
+
     /// @notice Information associated with a long term order
     /// @member sellRate Amount of tokens sold per interval
     /// @member earningsFactorLast The accrued earnings factor from which to start claiming owed earnings for this order
@@ -160,6 +163,10 @@ interface ITWAMM {
     /// @return timestamp The timestamp of the last TWAMM order execution for the given pool
     function lastVirtualOrderTimestamp(PoolId key) external view returns (uint256 timestamp);
 
+    /// @notice Kills the hook
+    /// @dev Normal pool operations can continue after hook is killed, TWAMM functions are disabled.
+    function killHook() external;
+
     /// @notice Retrieves a specific order from the TWAMM for the given pool.
     /// @dev Provides the entire Order struct associated with the given orderKey in the pool identified by poolKey.
     /// @param poolKey The PoolKey that identifies the relevant pool
@@ -183,12 +190,12 @@ interface ITWAMM {
 
     /// @notice Allowing sync multiple orders and then claims the owed tokens.
     /// @dev For each set of parameters, this function calls sync and then claims the owed tokens.
-    /// @param params An SyncParams
-    /// @return tokens0Claimed An array with the amount of token0 claimed for each order
-    /// @return tokens1Claimed An array with the amount of token1 claimed for each order
-    function batchSyncAndClaimTokens(SyncParams[] calldata params)
+    /// @param params SyncParams for pools to sync
+    /// @param currencies Currencies to claim
+    /// @return tokensClaimed An array with the amount of tokens claimed
+    function batchSyncAndClaimTokens(SyncParams[] calldata params, Currency[] calldata currencies)
         external
-        returns (uint256[] memory tokens0Claimed, uint256[] memory tokens1Claimed);
+        returns (uint256[] memory tokensClaimed);
 
     /// @notice Allowing sync order and then claims the owed tokens.
     /// @dev For each set of parameters, this function calls sync and then claims the owed tokens.

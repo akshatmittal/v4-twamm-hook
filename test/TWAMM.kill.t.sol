@@ -60,7 +60,7 @@ contract TWAMMUnevenTest is Test, Fixtures {
         // key = PoolKey(currency0, currency1, LPFeeLibrary.DYNAMIC_FEE_FLAG, 60, twammHook);
         key = PoolKey(currency0, currency1, 3000, 60, twammHook);
         poolId = key.toId();
-        manager.initialize(key, SQRT_PRICE_1_4);
+        manager.initialize(key, SQRT_PRICE_1_1);
 
         // This test assumes effectively unlimited liquidity
         posm.mint(
@@ -98,65 +98,41 @@ contract TWAMMUnevenTest is Test, Fixtures {
         );
     }
 
-    /**
-     * This file isn't a real test.
-     */
-    function test_TWAMM_Uneven_Playground() public {
-        uint256 orderDuration = 20_000;
-
-        // BalanceDelta delta = swap(key, true, -int256(80 ether), ZERO_BYTES);
-        // console2.log("delta0", delta.amount0());
-        // console2.log("delta1", delta.amount1());
-
-        vm.warp(10_000);
-        ITWAMM.OrderKey memory oKey1 = _submitOrderAs(address(0xB1), true, 80 ether, orderDuration);
-        ITWAMM.OrderKey memory oKey2 = _submitOrderAs(address(0xB2), false, 10 ether, orderDuration);
-
-        console2.log("twammBalance0 %18e", token0.balanceOf(address(twammHook)));
-        console2.log("twammBalance1 %18e", token1.balanceOf(address(twammHook)));
-
-        vm.warp(10_000 * 10);
-        console2.log("------");
-        twammHook.executeTWAMMOrders(key);
-        console2.log("------");
-
-        console2.log("twammBalance0 %18e", token0.balanceOf(address(twammHook)));
-        console2.log("twammBalance1 %18e", token1.balanceOf(address(twammHook)));
-
-        _updateOrderAndClaim(oKey1);
-        _updateOrderAndClaim(oKey2);
-
-        (, uint256 ef0) = twammHook.getOrderPool(key, true);
-        (, uint256 ef1) = twammHook.getOrderPool(key, false);
-
-        console2.log("ef0", ef0);
-        console2.log("ef1", ef1);
-
-        assertApproxEqRel(key.currency1.balanceOf(address(0xB1)), 20 ether, 0.02e18);
-        assertApproxEqRel(key.currency0.balanceOf(address(0xB2)), 40 ether, 0.02e18);
-
-        console2.log("twammBalance0 %18e", token0.balanceOf(address(twammHook)));
-        console2.log("twammBalance1 %18e", token1.balanceOf(address(twammHook)));
-    }
-
-    function test_TWAMM_Killed() external {
+    function test_TWAMM_Killed_ClaimsAreAsExpected() external {
         vm.warp(10_000);
         ITWAMM.OrderKey memory oKey1 = _submitOrderAs(address(0xB1), true, 1 ether, 20_000);
 
         vm.warp(20_000);
-        _updateOrderAndClaim(oKey1);
+        twammHook.executeTWAMMOrders(key);
+
+        vm.warp(30_000);
 
         vm.startPrank(address(123));
         twammHook.killHook();
         vm.stopPrank();
 
         vm.warp(100_000);
+
         vm.startPrank(address(0xB1));
         twammHook.syncAndClaimTokens(ITWAMM.SyncParams({key: key, orderKey: oKey1, removeRemaining: true}));
         vm.stopPrank();
 
-        console2.log("Balance0 %18e", token0.balanceOf(address(0xB1)));
-        console2.log("Balance1 %18e", token1.balanceOf(address(0xB1)));
+        assertApproxEqRel(key.currency0.balanceOf(address(0xB1)), 0.5 ether, 0); // No deviation if sell asset
+        assertApproxEqRel(key.currency1.balanceOf(address(0xB1)), 0.5 ether, 0.02e18);
+    }
+
+    function test_TWAMM_Killed_SwapsAreUntouched() external {
+        vm.warp(10_000);
+        vm.startPrank(address(123));
+        twammHook.killHook();
+        vm.stopPrank();
+
+        vm.warp(200_000);
+
+        BalanceDelta delta = swap(key, true, -int256(2 ether), ZERO_BYTES);
+
+        assertApproxEqRel(delta.amount0(), -2 ether, 0); // No deviation if sell asset
+        assertApproxEqRel(delta.amount1(), 2 ether, 0.01e18);
     }
 
     function _updateOrderAndClaim(ITWAMM.OrderKey memory oKey) internal {
