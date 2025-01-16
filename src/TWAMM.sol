@@ -542,7 +542,7 @@ contract TWAMM is BaseHook, Owned, ITWAMM {
         newSqrtPriceX96 = pool.sqrtPriceX96;
         zeroForOne = initialSqrtPriceX96 > newSqrtPriceX96;
 
-        // Only one of them would be non-zero at a time
+        // Only one of them would be active at a time
         maxSwapAmount = zeroForOne ? pool.maxSwap0For1 : pool.maxSwap1For0;
     }
 

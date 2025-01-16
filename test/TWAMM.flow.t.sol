@@ -233,20 +233,49 @@ contract TWAMMFlowTest is Test, Fixtures {
         assertEq(token1Owed, orderAmount);
     }
 
+    function testTWAMM_flow_executeTWAMMOrders_TwoIntervals() public {
+        vm.warp(10000);
+
+        ITWAMM.OrderKey memory oKey1 = _submitOrderAs(address(0xC1), true, 1 ether, 20000);
+        ITWAMM.OrderKey memory oKey2 = _submitOrderAs(address(0xC2), false, 5 ether, 20000);
+        ITWAMM.OrderKey memory oKey3 = _submitOrderAs(address(0xC3), true, 2 ether, 30000);
+        ITWAMM.OrderKey memory oKey4 = _submitOrderAs(address(0xC4), false, 2 ether, 30000);
+
+        vm.warp(60000);
+        twammHook.executeTWAMMOrders(key);
+
+        _updateOrderAndClaim(oKey1);
+        _updateOrderAndClaim(oKey2);
+        _updateOrderAndClaim(oKey3);
+        _updateOrderAndClaim(oKey4);
+
+        assertApproxEqRel(key.currency1.balanceOf(address(0xC1)), 1 ether, 0.02e18);
+        assertApproxEqRel(key.currency0.balanceOf(address(0xC2)), 5 ether, 0.02e18);
+        assertApproxEqRel(key.currency1.balanceOf(address(0xC3)), 2 ether, 0.02e18);
+        assertApproxEqRel(key.currency0.balanceOf(address(0xC4)), 2 ether, 0.02e18);
+    }
+
+    function _updateOrderAndClaim(ITWAMM.OrderKey memory oKey) internal {
+        vm.startPrank(oKey.owner);
+        twammHook.syncAndClaimTokens(ITWAMM.SyncParams({key: key, orderKey: oKey, removeRemaining: false}));
+        vm.stopPrank();
+    }
+
     function _submitOrderAs(address owner, bool zeroForOne, uint256 amount, uint160 duration)
         internal
         returns (ITWAMM.OrderKey memory oKey)
     {
-        token0.transfer(address(owner), amount);
-        token1.transfer(address(owner), amount);
+        if (zeroForOne) {
+            token0.transfer(address(owner), amount);
+        } else {
+            token1.transfer(address(owner), amount);
+        }
 
         vm.startPrank(owner);
         token0.approve(address(twammHook), amount);
         token1.approve(address(twammHook), amount);
 
-        oKey = ITWAMM.OrderKey(owner, uint160(block.timestamp) + duration, zeroForOne);
-
-        twammHook.submitOrder(
+        (, oKey) = twammHook.submitOrder(
             ITWAMM.SubmitOrderParams({key: key, zeroForOne: zeroForOne, duration: duration, amountIn: amount})
         );
         vm.stopPrank();
