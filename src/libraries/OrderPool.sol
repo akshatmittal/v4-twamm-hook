@@ -19,13 +19,9 @@ library OrderPool {
 
     // Performs all updates on an OrderPool, without committing the changes
     // @dev Must be followed by `advanceToInterval` to commit
-    function advanceWithoutCommit(State storage self, uint256 expiration, uint256 earningsFactor, uint256 usedSellRate)
-        internal
-    {
+    function advanceWithoutCommit(State storage self, uint256 earningsFactor, uint256 usedSellRate) internal {
         unchecked {
             self.earningsFactorCurrent += earningsFactor;
-            self.earningsFactorAtInterval[expiration] = self.earningsFactorCurrent;
-
             self.sellRateAccounted = usedSellRate;
         }
     }
@@ -37,13 +33,6 @@ library OrderPool {
             self.earningsFactorAtInterval[expiration] = self.earningsFactorCurrent;
             self.sellRateCurrent -= self.sellRateEndingAtInterval[expiration];
             self.sellRateAccounted = 0;
-        }
-    }
-
-    // Performs all the updates on an OrderPool that must happen when updating to the current time not on an interval
-    function advanceToCurrentTime(State storage self, uint256 earningsFactor) internal {
-        unchecked {
-            self.earningsFactorCurrent += earningsFactor;
         }
     }
 }

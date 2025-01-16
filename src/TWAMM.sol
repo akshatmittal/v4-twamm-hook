@@ -190,26 +190,25 @@ contract TWAMM is BaseHook, Owned, ITWAMM {
         }
 
         (uint160 sqrtPriceX96,, uint24 protocolFee, uint24 lpFee) = poolManager.getSlot0(poolId);
-        (bool zeroForOne, uint160 sqrtPriceLimitX96, int256 maxSwapAmount) = _executeTWAMMOrders(
+        (bool zeroForOne, uint160 sqrtPriceLimitX96, uint256 maxSwapAmount) = _executeTWAMMOrders(
             twamm,
             key,
             PoolParamsOnExecute(
                 sqrtPriceX96,
                 protocolFee + lpFee, // Always under MAX_FEE by design
                 poolManager.getLiquidity(poolId),
+                0,
                 0
             ),
             targetTimestamp
         );
 
         if (sqrtPriceLimitX96 != 0 && sqrtPriceLimitX96 != sqrtPriceX96 && maxSwapAmount != 0) {
-            uint256 maxToSwap = maxSwapAmount > 0 ? uint256(maxSwapAmount) : uint256(-maxSwapAmount);
-
             IPoolManager.SwapParams memory swapParams =
-                IPoolManager.SwapParams(zeroForOne, -maxToSwap.toInt256(), sqrtPriceLimitX96);
+                IPoolManager.SwapParams(zeroForOne, -maxSwapAmount.toInt256(), sqrtPriceLimitX96);
 
             if (poolManager.isUnlocked()) {
-                _processSwap(key, swapParams); // @audit Is this fully safe?
+                _processSwap(key, swapParams);
             } else {
                 poolManager.unlock(abi.encode(key, swapParams));
             }
@@ -416,16 +415,16 @@ contract TWAMM is BaseHook, Owned, ITWAMM {
     function _claimTokens(Currency token) internal returns (uint256 amountTransferred) {
         amountTransferred = tokensOwed[token][msg.sender];
 
-        if (amountTransferred > 0) {
+        if (amountTransferred != 0) {
             uint256 currentBalance = token.balanceOfSelf();
 
             if (currentBalance < amountTransferred) {
-                amountTransferred = currentBalance; // to catch precision errors
+                amountTransferred = currentBalance; // offByOne
             }
 
-            tokensOwed[token][msg.sender] -= amountTransferred; // @audit Should set this to 0 maybe?
+            tokensOwed[token][msg.sender] -= amountTransferred;
 
-            IERC20Minimal(Currency.unwrap(token)).safeTransfer(msg.sender, amountTransferred);
+            token.transfer(msg.sender, amountTransferred);
 
             emit ClaimTokens(token, msg.sender, amountTransferred);
         }
@@ -441,7 +440,6 @@ contract TWAMM is BaseHook, Owned, ITWAMM {
     }
 
     function _processSwap(PoolKey memory key, IPoolManager.SwapParams memory swapParams) internal {
-        // @audit This delta is important here since poolManager can be unlocked outside of the hook.
         BalanceDelta delta = poolManager.swap(key, swapParams, ZERO_BYTES);
 
         if (swapParams.zeroForOne) {
@@ -471,7 +469,8 @@ contract TWAMM is BaseHook, Owned, ITWAMM {
         uint160 sqrtPriceX96;
         uint24 totalFee;
         uint128 liquidity;
-        int256 maxSwapAmount;
+        uint256 maxSwap0For1;
+        uint256 maxSwap1For0;
     }
 
     /// @notice Executes all existing long term orders in the TWAMM
@@ -481,7 +480,7 @@ contract TWAMM is BaseHook, Owned, ITWAMM {
         PoolKey memory key,
         PoolParamsOnExecute memory pool,
         uint256 targetTimestamp
-    ) internal returns (bool zeroForOne, uint160 newSqrtPriceX96, int256 maxSwapAmount) {
+    ) internal returns (bool zeroForOne, uint160 newSqrtPriceX96, uint256 maxSwapAmount) {
         uint256 currentTimestampAtInterval = _getIntervalTime(targetTimestamp);
 
         if (currentTimestampAtInterval > block.timestamp || currentTimestampAtInterval < self.lastVirtualOrderTimestamp)
@@ -542,7 +541,9 @@ contract TWAMM is BaseHook, Owned, ITWAMM {
         self.lastVirtualOrderTimestamp = currentTimestampAtInterval;
         newSqrtPriceX96 = pool.sqrtPriceX96;
         zeroForOne = initialSqrtPriceX96 > newSqrtPriceX96;
-        maxSwapAmount = pool.maxSwapAmount;
+
+        // Only one of them would be non-zero at a time
+        maxSwapAmount = zeroForOne ? pool.maxSwap0For1 : pool.maxSwap1For0;
     }
 
     struct AdvanceParams {
@@ -573,13 +574,11 @@ contract TWAMM is BaseHook, Owned, ITWAMM {
             sellRate1To0As0 = (maxAdjustable1To0 << FixedPoint96.RESOLUTION) / priceSq;
 
             self.orderPool0For1.advanceWithoutCommit(
-                params.nextTimestamp,
-                (sellRate0To1As1 * params.secondsElapsed * FixedPoint96.Q96 / sellRate0To1),
+                (sellRate0To1As1 * params.secondsElapsed * FixedPoint96.Q96 / sellRate0To1), // Earnings
                 maxAdjustable0To1
             );
             self.orderPool1For0.advanceWithoutCommit(
-                params.nextTimestamp,
-                (sellRate1To0As0 * params.secondsElapsed * FixedPoint96.Q96 / sellRate1To0),
+                (sellRate1To0As0 * params.secondsElapsed * FixedPoint96.Q96 / sellRate1To0), // Earnings
                 maxAdjustable1To0
             );
         }
@@ -645,26 +644,22 @@ contract TWAMM is BaseHook, Owned, ITWAMM {
                     totalEarnings += SqrtPriceMath.getAmount1Delta(
                         params.pool.sqrtPriceX96, finalSqrtPriceX96, params.pool.liquidity, true
                     );
-                    params.pool.maxSwapAmount -= (params.secondsElapsed * sellRateCurrent).toInt256();
+                    params.pool.maxSwap0For1 += params.secondsElapsed * sellRateCurrent;
                 } else {
                     totalEarnings += SqrtPriceMath.getAmount0Delta(
                         params.pool.sqrtPriceX96, finalSqrtPriceX96, params.pool.liquidity, true
                     );
-                    params.pool.maxSwapAmount += (params.secondsElapsed * sellRateCurrent).toInt256();
+                    params.pool.maxSwap1For0 += params.secondsElapsed * sellRateCurrent;
                 }
 
                 uint256 accruedEarningsFactor = (totalEarnings * FixedPoint96.Q96) / orderPool.sellRateCurrent;
-                if (params.nextTimestamp % params.expirationInterval == 0) {
-                    self.orderPool0For1.advanceToInterval(
-                        params.nextTimestamp, params.zeroForOne ? accruedEarningsFactor : 0
-                    );
-                    self.orderPool1For0.advanceToInterval(
-                        params.nextTimestamp, params.zeroForOne ? 0 : accruedEarningsFactor
-                    );
-                } else {
-                    // @review This is now useless since timestamps are always on interval.
-                    orderPool.advanceToCurrentTime(accruedEarningsFactor);
-                }
+
+                self.orderPool0For1.advanceToInterval(
+                    params.nextTimestamp, params.zeroForOne ? accruedEarningsFactor : 0
+                );
+                self.orderPool1For0.advanceToInterval(
+                    params.nextTimestamp, params.zeroForOne ? 0 : accruedEarningsFactor
+                );
 
                 params.pool.sqrtPriceX96 = finalSqrtPriceX96;
 
