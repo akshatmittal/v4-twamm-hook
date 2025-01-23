@@ -19,8 +19,10 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {CurrencySettler} from "@uniswap/v4-core/test/utils/CurrencySettler.sol";
 import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
 import {TransientStateLibrary} from "@uniswap/v4-core/src/libraries/TransientStateLibrary.sol";
+import {ProtocolFeeLibrary} from "@uniswap/v4-core/src/libraries/ProtocolFeeLibrary.sol";
 import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "@uniswap/v4-core/src/types/BeforeSwapDelta.sol";
 import {LiquidityMath} from "@uniswap/v4-core/src/libraries/LiquidityMath.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {Owned} from "solmate/src/auth/Owned.sol";
 
 import {ITWAMM} from "@src/ITWAMM.sol";
@@ -193,13 +195,7 @@ contract TWAMM is BaseHook, Owned, ITWAMM {
         (bool zeroForOne, uint160 sqrtPriceLimitX96, uint256 maxSwapAmount) = _executeTWAMMOrders(
             twamm,
             key,
-            PoolParamsOnExecute(
-                sqrtPriceX96,
-                protocolFee + lpFee, // Always under MAX_FEE by design
-                poolManager.getLiquidity(poolId),
-                0,
-                0
-            ),
+            PoolParamsOnExecute(sqrtPriceX96, protocolFee, lpFee, poolManager.getLiquidity(poolId), 0, 0),
             targetTimestamp
         );
 
@@ -467,7 +463,8 @@ contract TWAMM is BaseHook, Owned, ITWAMM {
 
     struct PoolParamsOnExecute {
         uint160 sqrtPriceX96;
-        uint24 totalFee;
+        uint24 protocolFee;
+        uint24 lpFee;
         uint128 liquidity;
         uint256 maxSwap0For1;
         uint256 maxSwap1For0;
@@ -498,44 +495,44 @@ contract TWAMM is BaseHook, Owned, ITWAMM {
         uint256 prevTimestamp = self.lastVirtualOrderTimestamp;
         uint256 nextExpirationTimestamp = prevTimestamp + expirationInterval;
 
-        unchecked {
-            while (nextExpirationTimestamp <= currentTimestampAtInterval) {
-                if (_hasOutstandingOrdersAtInterval(self, nextExpirationTimestamp)) {
-                    pool = _advanceTimestampForSinglePoolSell(
-                        self,
-                        key,
-                        AdvanceSingleParams(
-                            expirationInterval,
-                            nextExpirationTimestamp,
-                            nextExpirationTimestamp - prevTimestamp,
-                            pool,
-                            false
-                        )
-                    );
-
-                    prevTimestamp = nextExpirationTimestamp;
-                }
-
-                nextExpirationTimestamp += expirationInterval;
-
-                if (!_hasOutstandingOrders(self)) {
-                    break;
-                }
-            }
-
-            if (prevTimestamp < currentTimestampAtInterval && _hasOutstandingOrders(self)) {
+        while (nextExpirationTimestamp <= currentTimestampAtInterval) {
+            if (_hasOutstandingOrdersAtInterval(self, nextExpirationTimestamp)) {
                 pool = _advanceTimestampForSinglePoolSell(
                     self,
                     key,
                     AdvanceSingleParams(
                         expirationInterval,
-                        currentTimestampAtInterval,
-                        currentTimestampAtInterval - prevTimestamp,
+                        nextExpirationTimestamp,
+                        nextExpirationTimestamp - prevTimestamp,
                         pool,
-                        false
+                        false,
+                        0
                     )
                 );
+
+                prevTimestamp = nextExpirationTimestamp;
             }
+
+            nextExpirationTimestamp += expirationInterval;
+
+            if (!_hasOutstandingOrders(self)) {
+                break;
+            }
+        }
+
+        if (prevTimestamp < currentTimestampAtInterval && _hasOutstandingOrders(self)) {
+            pool = _advanceTimestampForSinglePoolSell(
+                self,
+                key,
+                AdvanceSingleParams(
+                    expirationInterval,
+                    currentTimestampAtInterval,
+                    currentTimestampAtInterval - prevTimestamp,
+                    pool,
+                    false,
+                    0
+                )
+            );
         }
 
         self.lastVirtualOrderTimestamp = currentTimestampAtInterval;
@@ -557,7 +554,7 @@ contract TWAMM is BaseHook, Owned, ITWAMM {
         private
         returns (bool remainingZeroForOne)
     {
-        uint256 priceSq = uint256(params.pool.sqrtPriceX96) ** 2 >> FixedPoint96.RESOLUTION;
+        uint256 priceSq = Math.mulDiv(params.pool.sqrtPriceX96, params.pool.sqrtPriceX96, FixedPoint96.Q96);
 
         uint256 sellRate0To1 = self.orderPool0For1.sellRateCurrent;
         uint256 sellRate1To0 = self.orderPool1For0.sellRateCurrent;
@@ -592,6 +589,7 @@ contract TWAMM is BaseHook, Owned, ITWAMM {
         uint256 secondsElapsed;
         PoolParamsOnExecute pool;
         bool zeroForOne;
+        uint256 activeFee;
     }
 
     function _advanceTimestampForSinglePoolSell(
@@ -599,15 +597,24 @@ contract TWAMM is BaseHook, Owned, ITWAMM {
         PoolKey memory poolKey,
         AdvanceSingleParams memory params
     ) private returns (PoolParamsOnExecute memory) {
-        // Including zeroForOne in the params because stack-too-deep
-        (params.zeroForOne) = _exhaustMatchedOrders(
+        // Including zeroForOne & activeFee in the params because stack-too-deep
+        params.zeroForOne = _exhaustMatchedOrders(
             self, AdvanceParams(expirationInterval, params.nextTimestamp, params.secondsElapsed, params.pool)
         );
+        params.activeFee = params.pool.protocolFee == 0
+            ? params.pool.lpFee
+            : ProtocolFeeLibrary.calculateSwapFee(
+                params.zeroForOne
+                    ? ProtocolFeeLibrary.getZeroForOneFee(params.pool.protocolFee)
+                    : ProtocolFeeLibrary.getOneForZeroFee(params.pool.protocolFee),
+                params.pool.lpFee
+            );
 
         OrderPool.State storage orderPool = params.zeroForOne ? self.orderPool0For1 : self.orderPool1For0;
         uint256 sellRateCurrent = orderPool.sellRateCurrent - orderPool.sellRateAccounted;
-        uint256 amountSelling = sellRateCurrent * params.secondsElapsed * (SwapMath.MAX_SWAP_FEE - params.pool.totalFee)
-            / SwapMath.MAX_SWAP_FEE;
+
+        uint256 amountSelling =
+            sellRateCurrent * params.secondsElapsed * (SwapMath.MAX_SWAP_FEE - params.activeFee) / SwapMath.MAX_SWAP_FEE;
         uint256 totalEarnings;
 
         while (true) {
