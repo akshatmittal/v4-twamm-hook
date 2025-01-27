@@ -565,17 +565,16 @@ contract TWAMM is BaseHook, Owned, ITWAMM {
         uint256 maxAdjustable0To1 = sellRate0To1 > sellRate1To0As0 ? sellRate1To0As0 : sellRate0To1;
         uint256 maxAdjustable1To0 = sellRate1To0 > sellRate0To1As1 ? sellRate0To1As1 : sellRate1To0;
 
-        // If one is zero, the other must be zero too.
-        if (maxAdjustable0To1 != 0) {
+        if (maxAdjustable0To1 != 0 && maxAdjustable1To0 != 0) {
             sellRate0To1As1 = (maxAdjustable0To1 * priceSq) >> FixedPoint96.RESOLUTION;
             sellRate1To0As0 = (maxAdjustable1To0 << FixedPoint96.RESOLUTION) / priceSq;
 
             self.orderPool0For1.advanceWithoutCommit(
-                (sellRate0To1As1 * params.secondsElapsed * FixedPoint96.Q96 / sellRate0To1), // Earnings
+                Math.mulDiv(sellRate0To1As1 * params.secondsElapsed, FixedPoint96.Q96, sellRate0To1), // Earnings
                 maxAdjustable0To1
             );
             self.orderPool1For0.advanceWithoutCommit(
-                (sellRate1To0As0 * params.secondsElapsed * FixedPoint96.Q96 / sellRate1To0), // Earnings
+                Math.mulDiv(sellRate1To0As0 * params.secondsElapsed, FixedPoint96.Q96, sellRate1To0), // Earnings
                 maxAdjustable1To0
             );
         }
@@ -613,8 +612,9 @@ contract TWAMM is BaseHook, Owned, ITWAMM {
         OrderPool.State storage orderPool = params.zeroForOne ? self.orderPool0For1 : self.orderPool1For0;
         uint256 sellRateCurrent = orderPool.sellRateCurrent - orderPool.sellRateAccounted;
 
-        uint256 amountSelling =
-            sellRateCurrent * params.secondsElapsed * (SwapMath.MAX_SWAP_FEE - params.activeFee) / SwapMath.MAX_SWAP_FEE;
+        uint256 amountSelling = Math.mulDiv(
+            sellRateCurrent * params.secondsElapsed, SwapMath.MAX_SWAP_FEE - params.activeFee, SwapMath.MAX_SWAP_FEE
+        );
         uint256 totalEarnings;
 
         while (true) {
