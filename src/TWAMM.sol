@@ -31,6 +31,15 @@ import {PoolGetters} from "@lib/PoolGetters.sol";
 import {OrderPool} from "@lib/OrderPool.sol";
 import {TransferHelper} from "@lib/TransferHelper.sol";
 
+/**
+ * @title TWAMM Hook
+ * @notice This Uniswap V4 hook implements the Time-Weighted Average Market Maker (TWAMM)
+ *         strategy as detailed by Paradigm in their original paper.
+ * @dev Since this hook operates entirely onchain, there are several additional considerations.
+ *      Please see documentation before deploying.
+ * @author Uniswap Labs
+ * @author Akshat Mittal
+ */
 contract TWAMM is BaseHook, Owned, ITWAMM {
     using TransferHelper for IERC20Minimal;
     using CurrencySettler for Currency;
@@ -577,9 +586,11 @@ contract TWAMM is BaseHook, Owned, ITWAMM {
                 Math.mulDiv(sellRate1To0As0 * params.secondsElapsed, FixedPoint96.Q96, sellRate1To0), // Earnings
                 maxAdjustable1To0
             );
+
+            return sellRate0To1 - maxAdjustable0To1 != 0;
         }
 
-        return sellRate0To1 - maxAdjustable0To1 != 0;
+        return sellRate0To1 > sellRate1To0As0;
     }
 
     struct AdvanceSingleParams {
