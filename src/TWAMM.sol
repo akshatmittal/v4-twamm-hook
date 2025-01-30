@@ -563,27 +563,26 @@ contract TWAMM is BaseHook, Owned, ITWAMM {
         private
         returns (bool remainingZeroForOne)
     {
-        uint256 priceSq = Math.mulDiv(params.pool.sqrtPriceX96, params.pool.sqrtPriceX96, FixedPoint96.Q96);
+        uint256 priceX96 = Math.mulDiv(params.pool.sqrtPriceX96, params.pool.sqrtPriceX96, FixedPoint96.Q96);
 
         uint256 sellRate0To1 = self.orderPool0For1.sellRateCurrent;
         uint256 sellRate1To0 = self.orderPool1For0.sellRateCurrent;
-        uint256 sellRate0To1As1 = (sellRate0To1 * priceSq) >> FixedPoint96.RESOLUTION;
-        uint256 sellRate1To0As0 = (sellRate1To0 << FixedPoint96.RESOLUTION) / priceSq;
+
+        // uint256 sellRate0To1As1 = (sellRate0To1 * priceX96) >> FixedPoint96.RESOLUTION;
+        uint256 sellRate1To0As0 = (sellRate1To0 << FixedPoint96.RESOLUTION) / priceX96;
 
         // Need to figure out how much sell rate we can adjust between the two of them.
-        uint256 maxAdjustable0To1 = sellRate0To1 > sellRate1To0As0 ? sellRate1To0As0 : sellRate0To1;
-        uint256 maxAdjustable1To0 = sellRate1To0 > sellRate0To1As1 ? sellRate0To1As1 : sellRate1To0;
+        uint256 maxAdjustable0To1 = Math.min(sellRate0To1, sellRate1To0As0);
 
-        if (maxAdjustable0To1 != 0 && maxAdjustable1To0 != 0) {
-            sellRate0To1As1 = (maxAdjustable0To1 * priceSq) >> FixedPoint96.RESOLUTION;
-            sellRate1To0As0 = (maxAdjustable1To0 << FixedPoint96.RESOLUTION) / priceSq;
+        if (maxAdjustable0To1 != 0) {
+            uint256 maxAdjustable1To0 = (maxAdjustable0To1 * priceX96) >> FixedPoint96.RESOLUTION;
 
             self.orderPool0For1.advanceWithoutCommit(
-                Math.mulDiv(sellRate0To1As1 * params.secondsElapsed, FixedPoint96.Q96, sellRate0To1), // Earnings
+                Math.mulDiv(maxAdjustable1To0 * params.secondsElapsed, FixedPoint96.Q96, sellRate0To1), // Earnings
                 maxAdjustable0To1
             );
             self.orderPool1For0.advanceWithoutCommit(
-                Math.mulDiv(sellRate1To0As0 * params.secondsElapsed, FixedPoint96.Q96, sellRate1To0), // Earnings
+                Math.mulDiv(maxAdjustable0To1 * params.secondsElapsed, FixedPoint96.Q96, sellRate1To0), // Earnings
                 maxAdjustable1To0
             );
 
