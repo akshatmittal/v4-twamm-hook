@@ -571,21 +571,21 @@ contract TWAMM is BaseHook, Owned, ITWAMM {
         private
         returns (bool remainingZeroForOne)
     {
-        uint256 priceSq = Math.mulDiv(params.pool.sqrtPriceX96, params.pool.sqrtPriceX96, FixedPoint96.Q96);
+        uint256 priceX96 = Math.mulDiv(params.pool.sqrtPriceX96, params.pool.sqrtPriceX96, FixedPoint96.Q96);
 
         uint256 sellRate0To1 = self.orderPool0For1.sellRateCurrent;
         uint256 sellRate1To0 = self.orderPool1For0.sellRateCurrent;
 
-        uint256 sellRate0To1As1 = Math.mulDiv(sellRate0To1, priceSq, FixedPoint96.Q96);
-        uint256 sellRate1To0As0 = Math.mulDiv(sellRate1To0, FixedPoint96.Q96, priceSq);
+        uint256 sellRate0To1As1 = Math.mulDiv(sellRate0To1, priceX96, FixedPoint96.Q96);
+        uint256 sellRate1To0As0 = Math.mulDiv(sellRate1To0, FixedPoint96.Q96, priceX96);
 
         // Need to figure out how much sell rate we can adjust between the two of them.
         uint256 maxAdjustable0To1 = Math.min(sellRate0To1, sellRate1To0As0);
         uint256 maxAdjustable1To0 = Math.min(sellRate1To0, sellRate0To1As1);
 
         if (maxAdjustable0To1 != 0 && maxAdjustable1To0 != 0) {
-            sellRate0To1As1 = Math.mulDiv(maxAdjustable0To1, priceSq, FixedPoint96.Q96);
-            sellRate1To0As0 = Math.mulDiv(maxAdjustable1To0, FixedPoint96.Q96, priceSq);
+            sellRate0To1As1 = Math.mulDiv(maxAdjustable0To1, priceX96, FixedPoint96.Q96);
+            sellRate1To0As0 = Math.mulDiv(maxAdjustable1To0, FixedPoint96.Q96, priceX96);
 
             self.orderPool0For1.advanceWithoutCommit(
                 Math.mulDiv(sellRate0To1As1 * params.secondsElapsed, FixedPoint96.Q96, sellRate0To1), // Earnings
