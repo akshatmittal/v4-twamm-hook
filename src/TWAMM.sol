@@ -31,6 +31,8 @@ import {PoolGetters} from "@lib/PoolGetters.sol";
 import {OrderPool} from "@lib/OrderPool.sol";
 import {TransferHelper} from "@lib/TransferHelper.sol";
 
+uint256 constant RATE_SCALER = 1e18;
+
 /**
  * @title TWAMM Hook
  * @notice This Uniswap V4 hook implements the Time-Weighted Average Market Maker (TWAMM)
@@ -277,9 +279,13 @@ contract TWAMM is BaseHook, Owned, ITWAMM {
         }
 
         uint256 sellRate = params.amountIn / params.duration;
+        // uint256 sellRate = Math.mulDiv(params.amountIn, RATE_SCALER, params.duration);
         if (sellRate == 0) {
             revert SellRateCannotBeZero();
         }
+
+        // Sell rate is scaled after, since we want amounts to stay in the original scale
+        uint256 scaledSellRate = sellRate * RATE_SCALER;
 
         orderId = _orderId(orderKey);
 
@@ -289,11 +295,11 @@ contract TWAMM is BaseHook, Owned, ITWAMM {
 
         OrderPool.State storage orderPool = params.zeroForOne ? twamm.orderPool0For1 : twamm.orderPool1For0;
 
-        orderPool.sellRateCurrent += sellRate;
-        orderPool.sellRateEndingAtInterval[orderKey.expiration] += sellRate;
+        orderPool.sellRateCurrent += scaledSellRate;
+        orderPool.sellRateEndingAtInterval[orderKey.expiration] += scaledSellRate;
 
         uint256 earningsFactorLast = orderPool.earningsFactorCurrent;
-        twamm.orders[orderId] = Order({sellRate: sellRate, earningsFactorLast: earningsFactorLast});
+        twamm.orders[orderId] = Order({sellRate: scaledSellRate, earningsFactorLast: earningsFactorLast});
 
         IERC20Minimal(params.zeroForOne ? Currency.unwrap(params.key.currency0) : Currency.unwrap(params.key.currency1))
             .safeTransferFrom(msg.sender, address(this), sellRate * params.duration);
@@ -400,7 +406,9 @@ contract TWAMM is BaseHook, Owned, ITWAMM {
 
         earningsFactorLast =
             isOrderExpired ? orderPool.earningsFactorAtInterval[orderKey.expiration] : orderPool.earningsFactorCurrent;
-        buyTokensOwed = ((earningsFactorLast - order.earningsFactorLast) * order.sellRate) >> FixedPoint96.RESOLUTION;
+
+        buyTokensOwed = (Math.mulDiv(earningsFactorLast - order.earningsFactorLast, order.sellRate, RATE_SCALER))
+            >> FixedPoint96.RESOLUTION;
 
         if (isOrderExpired) {
             delete twamm.orders[orderId];
@@ -411,7 +419,7 @@ contract TWAMM is BaseHook, Owned, ITWAMM {
         if (removeRemaining && !isOrderExpired && orderKey.owner == msg.sender) {
             uint256 durationDelta = orderKey.expiration
                 - (killedAt == 0 ? _getIntervalTime(block.timestamp) : twamm.lastVirtualOrderTimestamp);
-            sellTokensOwed = order.sellRate * durationDelta;
+            sellTokensOwed = Math.mulDiv(order.sellRate, durationDelta, RATE_SCALER);
 
             delete twamm.orders[orderId];
         }
@@ -625,7 +633,9 @@ contract TWAMM is BaseHook, Owned, ITWAMM {
         uint256 sellRateCurrent = orderPool.sellRateCurrent - orderPool.sellRateAccounted;
 
         uint256 amountSelling = Math.mulDiv(
-            sellRateCurrent * params.secondsElapsed, SwapMath.MAX_SWAP_FEE - params.activeFee, SwapMath.MAX_SWAP_FEE
+            Math.mulDiv(sellRateCurrent, params.secondsElapsed, RATE_SCALER),
+            SwapMath.MAX_SWAP_FEE - params.activeFee,
+            SwapMath.MAX_SWAP_FEE
         );
         uint256 totalEarnings;
 
@@ -663,15 +673,17 @@ contract TWAMM is BaseHook, Owned, ITWAMM {
                     totalEarnings += SqrtPriceMath.getAmount1Delta(
                         params.pool.sqrtPriceX96, finalSqrtPriceX96, params.pool.liquidity, true
                     );
-                    params.pool.maxSwap0For1 += params.secondsElapsed * sellRateCurrent;
+                    params.pool.maxSwap0For1 += Math.mulDiv(params.secondsElapsed, sellRateCurrent, RATE_SCALER);
                 } else {
                     totalEarnings += SqrtPriceMath.getAmount0Delta(
                         params.pool.sqrtPriceX96, finalSqrtPriceX96, params.pool.liquidity, true
                     );
-                    params.pool.maxSwap1For0 += params.secondsElapsed * sellRateCurrent;
+                    params.pool.maxSwap1For0 += Math.mulDiv(params.secondsElapsed, sellRateCurrent, RATE_SCALER);
                 }
 
-                uint256 accruedEarningsFactor = (totalEarnings * FixedPoint96.Q96) / orderPool.sellRateCurrent;
+                // Simplified for: (totalEarnings * FixedPoint96.Q96) / (orderPool.sellRateCurrent / RATE_SCALER);
+                uint256 accruedEarningsFactor =
+                    Math.mulDiv(totalEarnings * FixedPoint96.Q96, RATE_SCALER, orderPool.sellRateCurrent);
 
                 self.orderPool0For1.advanceToInterval(
                     params.nextTimestamp, params.zeroForOne ? accruedEarningsFactor : 0
