@@ -18,7 +18,7 @@ import {MockERC20} from "solmate/src/test/utils/mocks/MockERC20.sol";
 import {EasyPosm} from "./utils/EasyPosm.sol";
 import {Fixtures} from "./utils/Fixtures.sol";
 
-import {TWAMM, ITWAMM} from "@src/TWAMM.sol";
+import {TWAMM, ITWAMM, RATE_SCALER} from "@src/TWAMM.sol";
 
 contract TWAMMFlowTest is Test, Fixtures {
     using EasyPosm for IPositionManager;
@@ -104,7 +104,7 @@ contract TWAMMFlowTest is Test, Fixtures {
         (uint256 sellRateCurrent,) = twammHook.getOrderPool(key, true);
 
         assertEq(token0.balanceOf(address(twammHook)), 1 ether);
-        assertEq(sellRateCurrent, 1 ether / orderDuration);
+        assertEq(sellRateCurrent, 1 ether * RATE_SCALER / orderDuration);
 
         // set timestamp to halfway through the order
         vm.warp(20_000);
@@ -148,7 +148,7 @@ contract TWAMMFlowTest is Test, Fixtures {
         (uint256 sellRateCurrent,) = twammHook.getOrderPool(key, true);
 
         assertEq(token0.balanceOf(address(twammHook)), 1 ether);
-        assertEq(sellRateCurrent, 1 ether / orderDuration);
+        assertEq(sellRateCurrent, 1 ether * RATE_SCALER / orderDuration);
 
         console2.log(token0.balanceOf(address(twammHook)));
         console2.log(token1.balanceOf(address(twammHook)));
@@ -176,7 +176,7 @@ contract TWAMMFlowTest is Test, Fixtures {
         (uint256 sellRateCurrent,) = twammHook.getOrderPool(key, true);
 
         assertEq(token0.balanceOf(address(twammHook)), 1 ether);
-        assertEq(sellRateCurrent, 1 ether / orderDuration);
+        assertEq(sellRateCurrent, 1 ether * RATE_SCALER / orderDuration);
 
         console2.log(token0.balanceOf(address(twammHook)));
         console2.log(token1.balanceOf(address(twammHook)));

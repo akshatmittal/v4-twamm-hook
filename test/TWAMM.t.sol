@@ -20,7 +20,7 @@ import {EasyPosm} from "./utils/EasyPosm.sol";
 import {Fixtures} from "./utils/Fixtures.sol";
 import {TWAMMExtended} from "./TWAMMExtended.sol";
 
-import {TWAMM, ITWAMM} from "@src/TWAMM.sol";
+import {TWAMM, ITWAMM, RATE_SCALER} from "@src/TWAMM.sol";
 
 contract TWAMMTest is Test, Fixtures {
     using EasyPosm for IPositionManager;
@@ -131,9 +131,9 @@ contract TWAMMTest is Test, Fixtures {
         (uint256 sellRateCurrent0For1, uint256 earningsFactorCurrent0For1) = twammHook.getOrderPool(key, true);
         (uint256 sellRateCurrent1For0, uint256 earningsFactorCurrent1For0) = twammHook.getOrderPool(key, false);
 
-        assertEq(submittedOrder.sellRate, 1 ether / duration);
+        assertEq(submittedOrder.sellRate, 1 ether * RATE_SCALER / duration);
         assertEq(submittedOrder.earningsFactorLast, 0);
-        assertEq(sellRateCurrent0For1, 1 ether / duration);
+        assertEq(sellRateCurrent0For1, 1 ether * RATE_SCALER / duration);
         assertEq(sellRateCurrent1For0, 0);
         assertEq(earningsFactorCurrent0For1, 0);
         assertEq(earningsFactorCurrent1For0, 0);
@@ -279,7 +279,7 @@ contract TWAMMTest is Test, Fixtures {
 
         ITWAMM.Order memory submittedOrder = twammHook.getOrder(key, orderKey2);
         (, uint256 earningsFactorCurrent) = twammHook.getOrderPool(key, true);
-        assertEq(submittedOrder.sellRate, 1 ether / 10000);
+        assertEq(submittedOrder.sellRate, 1 ether * RATE_SCALER / 10000);
         assertEq(submittedOrder.earningsFactorLast, earningsFactorCurrent);
     }
 
@@ -301,7 +301,7 @@ contract TWAMMTest is Test, Fixtures {
 
         ITWAMM.Order memory submittedOrder = twammHook.getOrder(key, orderKey2);
         (, uint256 earningsFactorCurrent) = twammHook.getOrderPool(key, false);
-        assertEq(submittedOrder.sellRate, 1 ether / 10000);
+        assertEq(submittedOrder.sellRate, 1 ether * RATE_SCALER / 10000);
         assertEq(submittedOrder.earningsFactorLast, earningsFactorCurrent);
     }
 
