@@ -20,3 +20,4 @@ node_modules/
 # Foundry
 lcov.info
 Playground.t.sol
+output.txt

@@ -4,8 +4,13 @@ evm_version = "cancun"
 ffi = true
 libs = ["lib"]
 optimizer = true
+optimizer_runs = 200
 out = "out"
 solc_version = "0.8.26"
 src = "src"
 
-# See more config options https://github.com/foundry-rs/foundry/tree/master/config
+[rpc_endpoints]
+base = "https://mainnet.base.org"
+
+[etherscan]
+base = {url = "https://api.basescan.org/api", key = ""}

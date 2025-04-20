@@ -40,7 +40,7 @@ uint256 constant RATE_SCALER = 1e18;
  * @dev Since this hook operates entirely onchain, there are several additional considerations.
  *      Please see documentation before deploying.
  * @author Uniswap Labs
- * @author Akshat Mittal
+ * @author Zaha Studio
  */
 contract TWAMM is BaseHook, Owned, ITWAMM {
     using TransferHelper for IERC20Minimal;
