@@ -80,11 +80,9 @@ interface ITWAMM {
     /// @notice Data required to sync tokens for multiple orders in a single batch call.
     /// @param key The PoolKey for which to identify the pool
     /// @param orderKey The OrderKey for which to identify the order
-    /// @param removeRemaining If true, the remainder of the order should be removed at the current interval
     struct SyncParams {
         PoolKey key;
         OrderKey orderKey;
-        bool removeRemaining;
     }
 
     /**
@@ -130,14 +128,14 @@ interface ITWAMM {
     /// @notice Emitted when an order is synced
     /// @param poolId The id of the corresponding pool
     /// @param orderId The unique identifier of the order, derived as keccak256 hash of the OrderKey
-    /// @param removeRemaining Indicates whether the remaining order should be canceled at the current interval
+    /// @param assetsRemoved Indicates whether the remaining order has been removed; only if hook has been killed
     /// @param tokens0OwedDelta Change in owed tokens0
     /// @param tokens1OwedDelta Change in owed tokens1
     /// @param earningsFactorLast The current earningsFactor of the order pool
     event SyncOrder(
         PoolId indexed poolId,
         bytes32 indexed orderId,
-        bool removeRemaining,
+        bool assetsRemoved,
         uint256 tokens0OwedDelta,
         uint256 tokens1OwedDelta,
         uint256 earningsFactorLast

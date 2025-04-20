@@ -217,7 +217,7 @@ contract TWAMMComplexTest is Test, Fixtures {
 
     function _updateOrderAndClaim(ITWAMM.OrderKey memory oKey) internal {
         vm.startPrank(oKey.owner);
-        twammHook.syncAndClaimTokens(ITWAMM.SyncParams({key: key, orderKey: oKey, removeRemaining: false}));
+        twammHook.syncAndClaimTokens(ITWAMM.SyncParams({key: key, orderKey: oKey}));
 
         vm.stopPrank();
     }
