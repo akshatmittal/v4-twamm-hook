@@ -362,6 +362,10 @@ contract TWAMM is BaseHook, Owned, ITWAMM {
 
     /// @inheritdoc ITWAMM
     function sync(SyncParams calldata params) public returns (uint256 tokens0OwedDelta, uint256 tokens1OwedDelta) {
+        if (params.orderKey.owner != msg.sender) {
+            revert Unauthorized();
+        }
+
         executeTWAMMOrders(params.key);
 
         (
@@ -427,7 +431,7 @@ contract TWAMM is BaseHook, Owned, ITWAMM {
             order.earningsFactorLast = earningsFactorLast;
         }
 
-        if (killedAt != 0 && !isOrderExpired && orderKey.owner == msg.sender) {
+        if (killedAt != 0 && !isOrderExpired) {
             uint256 durationDelta = orderKey.expiration - twamm.lastVirtualOrderTimestamp;
             sellTokensOwed = Math.mulDiv(order.sellRate, durationDelta, RATE_SCALER);
 
