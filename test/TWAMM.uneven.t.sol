@@ -152,7 +152,7 @@ contract TWAMMUnevenTest is Test, Fixtures {
 
         vm.warp(100_000);
         vm.startPrank(address(0xB1));
-        twammHook.syncAndClaimTokens(ITWAMM.SyncParams({key: key, orderKey: oKey1, removeRemaining: true}));
+        twammHook.syncAndClaimTokens(ITWAMM.SyncParams({key: key, orderKey: oKey1}));
         vm.stopPrank();
 
         console2.log("Balance0 %18e", token0.balanceOf(address(0xB1)));
@@ -161,7 +161,7 @@ contract TWAMMUnevenTest is Test, Fixtures {
 
     function _updateOrderAndClaim(ITWAMM.OrderKey memory oKey) internal {
         vm.startPrank(oKey.owner);
-        twammHook.syncAndClaimTokens(ITWAMM.SyncParams({key: key, orderKey: oKey, removeRemaining: false}));
+        twammHook.syncAndClaimTokens(ITWAMM.SyncParams({key: key, orderKey: oKey}));
 
         vm.stopPrank();
     }

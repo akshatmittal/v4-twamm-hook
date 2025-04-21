@@ -117,7 +117,7 @@ contract TWAMMFlowTest is Test, Fixtures {
         uint256 balance1After;
 
         (balance0Before, balance1Before) = (key.currency0.balanceOfSelf(), key.currency1.balanceOfSelf());
-        twammHook.syncAndClaimTokens(ITWAMM.SyncParams({key: key, orderKey: oKey, removeRemaining: false}));
+        twammHook.syncAndClaimTokens(ITWAMM.SyncParams({key: key, orderKey: oKey}));
 
         (balance0After, balance1After) = (key.currency0.balanceOfSelf(), key.currency1.balanceOfSelf());
 
@@ -131,7 +131,7 @@ contract TWAMMFlowTest is Test, Fixtures {
         swap(key, true, -int256(0.0001 ether), ZERO_BYTES);
 
         (balance0Before, balance1Before) = (key.currency0.balanceOfSelf(), key.currency1.balanceOfSelf());
-        twammHook.syncAndClaimTokens(ITWAMM.SyncParams({key: key, orderKey: oKey, removeRemaining: false}));
+        twammHook.syncAndClaimTokens(ITWAMM.SyncParams({key: key, orderKey: oKey}));
         (balance0After, balance1After) = (key.currency0.balanceOfSelf(), key.currency1.balanceOfSelf());
 
         assertEq(balance0After - balance0Before, 0); // It's a zeroForOne trade
@@ -193,9 +193,9 @@ contract TWAMMFlowTest is Test, Fixtures {
         console2.log(token0.balanceOf(address(twammHook)));
         console2.log(token1.balanceOf(address(twammHook)));
 
-        twammHook.sync(ITWAMM.SyncParams({key: key, orderKey: oKey1, removeRemaining: false}));
+        twammHook.sync(ITWAMM.SyncParams({key: key, orderKey: oKey1}));
 
-        twammHook.sync(ITWAMM.SyncParams({key: key, orderKey: oKey2, removeRemaining: false}));
+        twammHook.sync(ITWAMM.SyncParams({key: key, orderKey: oKey2}));
 
         twammHook.claimTokensByPoolKey(key);
     }
@@ -222,9 +222,9 @@ contract TWAMMFlowTest is Test, Fixtures {
         _submitOrderAs(address(0xA2), false, orderAmount * 2, 50000);
 
         vm.warp(40000);
-        twammHook.sync(ITWAMM.SyncParams({key: key, orderKey: orderKey1, removeRemaining: false}));
+        twammHook.sync(ITWAMM.SyncParams({key: key, orderKey: orderKey1}));
 
-        twammHook.sync(ITWAMM.SyncParams({key: key, orderKey: orderKey2, removeRemaining: false}));
+        twammHook.sync(ITWAMM.SyncParams({key: key, orderKey: orderKey2}));
 
         uint256 token0Owed = twammHook.tokensOwed(key.currency0, orderKey2.owner);
         uint256 token1Owed = twammHook.tokensOwed(key.currency1, orderKey2.owner);
@@ -257,7 +257,7 @@ contract TWAMMFlowTest is Test, Fixtures {
 
     function _updateOrderAndClaim(ITWAMM.OrderKey memory oKey) internal {
         vm.startPrank(oKey.owner);
-        twammHook.syncAndClaimTokens(ITWAMM.SyncParams({key: key, orderKey: oKey, removeRemaining: false}));
+        twammHook.syncAndClaimTokens(ITWAMM.SyncParams({key: key, orderKey: oKey}));
         vm.stopPrank();
     }
 

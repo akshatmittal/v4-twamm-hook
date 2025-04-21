@@ -139,66 +139,6 @@ contract TWAMMTest is Test, Fixtures {
         assertEq(earningsFactorCurrent1For0, 0);
     }
 
-    function testTWAMM_cancelOrder_OneForZero_UpdatesOwedTokens() public {
-        ITWAMM.OrderKey memory orderKey1;
-        ITWAMM.OrderKey memory orderKey2;
-        uint256 orderAmount;
-        (orderKey1, orderKey2, orderAmount) = submitOrdersBothDirections();
-
-        // set timestamp to halfway through the order
-        vm.warp(20000);
-
-        twammHook.sync(ITWAMM.SyncParams({key: key, orderKey: orderKey2, removeRemaining: true}));
-
-        uint256 token0Owed = twammHook.tokensOwed(key.currency0, orderKey1.owner);
-        uint256 token1Owed = twammHook.tokensOwed(key.currency1, orderKey1.owner);
-
-        assertEq(token0Owed, orderAmount / 2);
-        assertEq(token1Owed, orderAmount / 2);
-    }
-
-    function testTWAMM_syncOrder_ZeroForOne_ClosesOrderIfEliminatingPosition() public {
-        ITWAMM.OrderKey memory orderKey1;
-        ITWAMM.OrderKey memory orderKey2;
-        uint256 orderAmount;
-        (orderKey1, orderKey2, orderAmount) = submitOrdersBothDirections();
-
-        // set timestamp to halfway through the order
-        vm.warp(20000);
-
-        twammHook.sync(ITWAMM.SyncParams({key: key, orderKey: orderKey1, removeRemaining: true}));
-
-        ITWAMM.Order memory deletedOrder = twammHook.getOrder(key, orderKey1);
-        uint256 token0Owed = twammHook.tokensOwed(key.currency0, orderKey1.owner);
-        uint256 token1Owed = twammHook.tokensOwed(key.currency1, orderKey1.owner);
-
-        assertEq(deletedOrder.sellRate, 0);
-        assertEq(deletedOrder.earningsFactorLast, 0);
-        assertEq(token0Owed, orderAmount / 2);
-        assertEq(token1Owed, orderAmount / 2);
-    }
-
-    function testTWAMM_syncOrder_OneForZero_ClosesOrderIfEliminatingPosition() public {
-        ITWAMM.OrderKey memory orderKey1;
-        ITWAMM.OrderKey memory orderKey2;
-        uint256 orderAmount;
-        (orderKey1, orderKey2, orderAmount) = submitOrdersBothDirections();
-
-        // set timestamp to halfway through the order
-        vm.warp(20000);
-
-        twammHook.sync(ITWAMM.SyncParams({key: key, orderKey: orderKey2, removeRemaining: true}));
-
-        ITWAMM.Order memory deletedOrder = twammHook.getOrder(key, orderKey2);
-        uint256 token0Owed = twammHook.tokensOwed(key.currency0, orderKey2.owner);
-        uint256 token1Owed = twammHook.tokensOwed(key.currency1, orderKey2.owner);
-
-        assertEq(deletedOrder.sellRate, 0);
-        assertEq(deletedOrder.earningsFactorLast, 0);
-        assertEq(token0Owed, orderAmount / 2);
-        assertEq(token1Owed, orderAmount / 2);
-    }
-
     function testTWAMMEndToEndSimSymmetricalOrderPools() public {
         uint256 orderAmount = 1e18;
         ITWAMM.OrderKey memory orderKey1 = ITWAMM.OrderKey(address(this), 30000, true);
@@ -223,8 +163,8 @@ contract TWAMMTest is Test, Fixtures {
         vm.warp(20000);
         twammHook.executeTWAMMOrders(key);
 
-        twammHook.sync(ITWAMM.SyncParams({key: key, orderKey: orderKey1, removeRemaining: false}));
-        twammHook.sync(ITWAMM.SyncParams({key: key, orderKey: orderKey2, removeRemaining: false}));
+        twammHook.sync(ITWAMM.SyncParams({key: key, orderKey: orderKey1}));
+        twammHook.sync(ITWAMM.SyncParams({key: key, orderKey: orderKey2}));
 
         uint256 earningsToken0 = twammHook.tokensOwed(key.currency0, address(this));
         uint256 earningsToken1 = twammHook.tokensOwed(key.currency1, address(this));
@@ -240,8 +180,8 @@ contract TWAMMTest is Test, Fixtures {
         vm.warp(30000);
         twammHook.executeTWAMMOrders(key);
 
-        twammHook.sync(ITWAMM.SyncParams({key: key, orderKey: orderKey1, removeRemaining: false}));
-        twammHook.sync(ITWAMM.SyncParams({key: key, orderKey: orderKey2, removeRemaining: false}));
+        twammHook.sync(ITWAMM.SyncParams({key: key, orderKey: orderKey1}));
+        twammHook.sync(ITWAMM.SyncParams({key: key, orderKey: orderKey2}));
 
         twammHook.claimTokensByPoolKey(key);
 
@@ -340,7 +280,7 @@ contract TWAMMTest is Test, Fixtures {
         // set timestamp to halfway through the order
         vm.warp(orderKey2.expiration + 10);
 
-        twammHook.sync(ITWAMM.SyncParams({key: key, orderKey: orderKey2, removeRemaining: false}));
+        twammHook.sync(ITWAMM.SyncParams({key: key, orderKey: orderKey2}));
 
         (uint256 updatedSellRate,) = twammHook.getOrderPool(key, false);
         ITWAMM.Order memory deletedOrder = twammHook.getOrder(key, orderKey2);

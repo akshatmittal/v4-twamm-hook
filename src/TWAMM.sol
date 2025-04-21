@@ -362,10 +362,19 @@ contract TWAMM is BaseHook, Owned, ITWAMM {
 
     /// @inheritdoc ITWAMM
     function sync(SyncParams calldata params) public returns (uint256 tokens0OwedDelta, uint256 tokens1OwedDelta) {
+        if (params.orderKey.owner != msg.sender) {
+            revert Unauthorized();
+        }
+
         executeTWAMMOrders(params.key);
 
-        (uint256 buyTokensOwed, uint256 sellTokensOwed, uint256 newEarningsFactorLast, bytes32 orderId) =
-            _sync(params.key, params.orderKey, params.removeRemaining);
+        (
+            uint256 buyTokensOwed,
+            uint256 sellTokensOwed,
+            uint256 newEarningsFactorLast,
+            bytes32 orderId,
+            bool assetsRemoved
+        ) = _sync(params.key, params.orderKey);
 
         if (params.orderKey.zeroForOne) {
             tokens0OwedDelta += sellTokensOwed;
@@ -381,16 +390,22 @@ contract TWAMM is BaseHook, Owned, ITWAMM {
         emit SyncOrder(
             params.key.toId(),
             orderId,
-            params.removeRemaining,
+            assetsRemoved, // Only true if the hook has been killed
             tokens0OwedDelta,
             tokens1OwedDelta,
             newEarningsFactorLast
         );
     }
 
-    function _sync(PoolKey memory key, OrderKey memory orderKey, bool removeRemaining)
+    function _sync(PoolKey memory key, OrderKey memory orderKey)
         internal
-        returns (uint256 buyTokensOwed, uint256 sellTokensOwed, uint256 earningsFactorLast, bytes32 orderId)
+        returns (
+            uint256 buyTokensOwed,
+            uint256 sellTokensOwed,
+            uint256 earningsFactorLast,
+            bytes32 orderId,
+            bool assetsRemoved
+        )
     {
         PoolId poolId = key.toId();
         TWAMMState storage twamm = twammStates[poolId];
@@ -416,12 +431,13 @@ contract TWAMM is BaseHook, Owned, ITWAMM {
             order.earningsFactorLast = earningsFactorLast;
         }
 
-        if (removeRemaining && !isOrderExpired && orderKey.owner == msg.sender) {
-            uint256 durationDelta = orderKey.expiration
-                - (killedAt == 0 ? _getIntervalTime(block.timestamp) : twamm.lastVirtualOrderTimestamp);
+        if (killedAt != 0 && !isOrderExpired) {
+            uint256 durationDelta = orderKey.expiration - twamm.lastVirtualOrderTimestamp;
             sellTokensOwed = Math.mulDiv(order.sellRate, durationDelta, RATE_SCALER);
 
             delete twamm.orders[orderId];
+
+            assetsRemoved = true;
         }
     }
 

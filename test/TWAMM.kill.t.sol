@@ -114,7 +114,7 @@ contract TWAMMUnevenTest is Test, Fixtures {
         vm.warp(100_000);
 
         vm.startPrank(address(0xB1));
-        twammHook.syncAndClaimTokens(ITWAMM.SyncParams({key: key, orderKey: oKey1, removeRemaining: true}));
+        twammHook.syncAndClaimTokens(ITWAMM.SyncParams({key: key, orderKey: oKey1}));
         vm.stopPrank();
 
         assertApproxEqRel(key.currency0.balanceOf(address(0xB1)), 0.5 ether, 0); // No deviation if sell asset
@@ -137,7 +137,7 @@ contract TWAMMUnevenTest is Test, Fixtures {
 
     function _updateOrderAndClaim(ITWAMM.OrderKey memory oKey) internal {
         vm.startPrank(oKey.owner);
-        twammHook.syncAndClaimTokens(ITWAMM.SyncParams({key: key, orderKey: oKey, removeRemaining: false}));
+        twammHook.syncAndClaimTokens(ITWAMM.SyncParams({key: key, orderKey: oKey}));
 
         vm.stopPrank();
     }
