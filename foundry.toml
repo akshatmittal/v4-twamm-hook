@@ -1,5 +1,6 @@
 [profile.default]
 bytecode_hash = "none"
+dynamic_test_linking = true
 evm_version = "cancun"
 ffi = true
 libs = ["lib"]
@@ -11,6 +12,8 @@ src = "src"
 
 [rpc_endpoints]
 base = "https://mainnet.base.org"
+unichain = "https://mainnet.unichain.org"
 
 [etherscan]
 base = {url = "https://api.basescan.org/api", key = ""}
+unichain = {url = "https://api.uniscan.xyz/api", key = ""}

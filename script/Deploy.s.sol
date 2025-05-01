@@ -12,15 +12,25 @@ import {HookMiner} from "../test/utils/HookMiner.sol";
 import {TWAMM} from "../src/TWAMM.sol";
 
 contract DeployScript is Script {
-    address constant CREATE2_DEPLOYER = 0x4e59b44847b379578588920cA78FbF26c0B4956C;
-    address constant POOL_MANAGER = 0x498581fF718922c3f8e6A244956aF099B2652b2b; // Base
+    address private CREATE2_DEPLOYER = 0x4e59b44847b379578588920cA78FbF26c0B4956C;
+    address private POOL_MANAGER;
 
-    address constant FWB_MULTISIG = 0xf34292eB10BE9cB62be70bA2058e0d683839DaBC;
-    uint256 constant expirationInterval = 1 hours;
+    address private CONTROLLER_MULTISIG = 0xd3492D595e3039355D363AC9784C9dB96E074b70;
+    uint256 private expirationInterval = 30 minutes;
 
-    function setUp() public {}
+    function setUp() public {
+        if (block.chainid == 8453) {
+            POOL_MANAGER = 0x498581fF718922c3f8e6A244956aF099B2652b2b; // Base
+        } else if (block.chainid == 130) {
+            POOL_MANAGER = 0x1F98400000000000000000000000000000000004; // Unichain
+        } else {
+            revert("DeployScript: Unsupported chain");
+        }
+    }
 
     function run() public {
+        require(POOL_MANAGER != address(0), "DeployScript: POOL_MANAGER not set");
+
         // hook contracts must have specific flags encoded in the address
         uint160 flags = uint160(
             Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_SWAP_FLAG | Hooks.BEFORE_ADD_LIQUIDITY_FLAG
@@ -28,23 +38,15 @@ contract DeployScript is Script {
         );
 
         // Mine a salt that will produce a hook address with the correct flags
-        bytes memory constructorArgs = abi.encode(POOL_MANAGER, expirationInterval, FWB_MULTISIG);
+        bytes memory constructorArgs = abi.encode(POOL_MANAGER, expirationInterval, CONTROLLER_MULTISIG);
         (address hookAddress, bytes32 salt) =
             HookMiner.find(CREATE2_DEPLOYER, flags, type(TWAMM).creationCode, constructorArgs);
 
         // Deploy the hook using CREATE2
         vm.broadcast();
-        TWAMM twammHook = new TWAMM{salt: salt}(IPoolManager(POOL_MANAGER), expirationInterval, FWB_MULTISIG);
+        TWAMM twammHook = new TWAMM{salt: salt}(IPoolManager(POOL_MANAGER), expirationInterval, CONTROLLER_MULTISIG);
 
         console2.log("TWAMM Hook:", hookAddress);
-
-        // PoolKey memory key = PoolKey(
-        //     Currency.wrap(0x4200000000000000000000000000000000000006),
-        //     Currency.wrap(0xaa5aD1F869b910E5F794b9366E05E5F2cAb4bFAD),
-        //     3000,
-        //     60,
-        //     TWAMM(0x96e3B4e76b409F10E2F89501F6ca5ABFcd92Ea80)
-        // );
 
         require(address(twammHook) == hookAddress, "DeployScript: hook address mismatch");
     }

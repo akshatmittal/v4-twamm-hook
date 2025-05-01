@@ -2,7 +2,17 @@
 
 This hook implements the TWAMM (Time-Weighted Average Market Maker) strategy for Uniswap V4. The strategy is explained in detail in the [TWAMM explainer](https://www.paradigm.xyz/2021/07/twamm) by Paradigm.
 
-This implementation specifically implements the TWAMM Order Strategy using a Hook on the Uniswap V4 Pool. Given that this is implemented entirely onchain, there are additional considerations associated with it.
+This contract implements the TWAMM Order Strategy as a Hook on Uniswap V4. Given that this is implemented entirely onchain, there are additional considerations associated with it. (see below)
+
+Authored by Uniswap Labs & Zaha Studio.
+
+## Deployments
+
+See the [Deployments](./deployments.md) file for the latest deployments and associated controllers.
+
+## Audits
+
+The TWAMM Hook was audited by ABDK Consulting & Certora. The audit reports can be found in the [audits](./audits) directory.
 
 ## Considerations
 
@@ -21,9 +31,5 @@ This implementation specifically implements the TWAMM Order Strategy using a Hoo
 - **Front Running Protection**: The TWAMM orders are executed _before_ another swap or liquidity change. Effectively, this means that the TWAMM orders can _not_ be front-run. (However, other price related considerations still apply)
 - **MEV Chain**: Since all TWAMM orders are simply just long term orders that anyone can execute, it does open up some interesting MEV opportunities and can leak some value.
   - If a TWAMM order is in a state where it would move the price in the pool by enough value that it creates an arbitrage with another pool, MEV is incentivized to execute the TWAMM order and capitalize on the arbitrage opportunity. This is a _good_ thing since it means that the TWAMM order is being executed at the current market price, although while leaking _some_ value.
-- **Information Leakage**: This is not specific to this implementation but is a general consideration for all TWAMM mechanisms. Since the TWAMM orders are public, they leak _information_ that a trade of this size is coming to the market. You should always keep this in mind, although it is possible to cancel the TWAMM order if the market conditions change.
+- **Information Leakage**: This is not specific to this implementation but is a general consideration for all TWAMM mechanisms. Since the TWAMM orders are public, they leak _information_ that a trade of this size is coming to the market. You should always keep this in mind.
 - **Informed Order Flow**: Related to the previous point, an informed actor can create a trade in the opposite direction of existing trades to effectively trade without a fee for any overlapping amount. That said, they are still subject to the price risk of the asset involved. The hook prevents this somewhat by ensuring that the TWAMM orders are executed before new orders are accepted.
-
-## ?????
-
-[TODO](./TODO.md)

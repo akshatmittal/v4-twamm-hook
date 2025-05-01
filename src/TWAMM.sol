@@ -63,7 +63,7 @@ contract TWAMM is BaseHook, Owned, ITWAMM {
     mapping(PoolId poolId => TWAMMState twammState) internal twammStates;
     mapping(Currency token => mapping(address owner => uint256 amountOwed)) public tokensOwed;
 
-    /// @notice If true, the hook has been killed and can no longer be used to create TWAMM orders.
+    /// @notice If non-zero, the hook has been killed and can no longer be used to create TWAMM orders.
     ///         Swaps & Liquidity Actions will continue to operate normally.
     uint256 public killedAt;
 

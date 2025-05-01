@@ -118,7 +118,7 @@ contract TWAMMUnevenTest is Test, Fixtures {
         vm.stopPrank();
 
         assertApproxEqRel(key.currency0.balanceOf(address(0xB1)), 0.5 ether, 0); // No deviation if sell asset
-        assertApproxEqRel(key.currency1.balanceOf(address(0xB1)), 0.5 ether, 0.02e18);
+        assertApproxEqRel(key.currency1.balanceOf(address(0xB1)), 0.5 ether, 0.01e18);
     }
 
     function test_TWAMM_Killed_SwapsAreUntouched() external {
