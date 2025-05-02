@@ -10,6 +10,8 @@ Authored by Uniswap Labs & Zaha Studio.
 
 See the [Deployments](./deployments.md) file for the latest deployments and associated controllers.
 
+The TWAMM hook was initially deployed for FWB, read case study [here](https://zaha.studio/case-study-fwb).
+
 ## Audits
 
 The TWAMM Hook was audited by ABDK Consulting & Certora. The audit reports can be found in the [audits](./audits) directory.
