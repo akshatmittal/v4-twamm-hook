@@ -8,9 +8,7 @@ Authored by Uniswap Labs & Zaha Studio.
 
 ## Deployments
 
-See the [Deployments](./deployments.md) file for the latest deployments and associated controllers.
-
-The TWAMM hook was initially deployed for FWB, read case study [here](https://zaha.studio/case-study-fwb).
+See the [deployments](./deployments.md) file for the latest deployments and associated controllers. The initial deployment for the TWAMM hook was created for FWB, see [case study here](https://zaha.studio/case-study-fwb).
 
 ## Audits
 
