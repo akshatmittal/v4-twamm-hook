@@ -6,6 +6,8 @@ This contract implements the TWAMM Order Strategy as a Hook on Uniswap V4. Given
 
 Authored by Uniswap Labs & Zaha Studio.
 
+[Introduction Thread](https://x.com/iakshatmittal/status/1930663811914072462) ✦ [FWB Thread](https://x.com/FWBtweets/status/1930663751851577522)
+
 ## Deployments
 
 See the [deployments](./deployments.md) file for the latest deployments and associated controllers. The initial deployment for the TWAMM hook was created for FWB, see [case study here](https://zaha.studio/case-study-fwb).
